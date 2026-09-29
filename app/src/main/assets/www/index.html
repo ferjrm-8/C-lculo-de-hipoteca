@@ -1162,7 +1162,11 @@
           </select>
         </div>
 
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="clearAllData()" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.4);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            Borrar Todo
+          </button>
           <button onclick="openModal()" class="btn btn-primary btn-sm">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Añadir Mes
@@ -1339,7 +1343,10 @@
           <button onclick="exportDataCSV()" class="btn btn-secondary btn-sm">Exportar CSV (Excel)</button>
           <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm">Importar JSON</button>
           <input type="file" id="import-file-input" onchange="importDataJSON(event)" style="display: none;" accept=".json">
-          <button onclick="resetToExcelOriginal()" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.4);">
+          <button onclick="clearAllData()" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.1);">
+            Borrar Todo y Empezar de Cero
+          </button>
+          <button onclick="resetToExcelOriginal()" class="btn btn-secondary btn-sm" style="color: var(--text-muted); border-color: var(--border-color);">
             Restablecer Datos Excel Original
           </button>
         </div>
@@ -1748,13 +1755,8 @@
 
       const totInt = payments.reduce((acc, p) => acc + (Number(p.interest) || 0), 0);
       const totPrin = payments.reduce((acc, p) => acc + (Number(p.principal) || 0) + (Number(p.extra) || 0), 0);
-      document.getElementById('kpi-interest-paid').textContent = fmt(totInt);
-      document.getElementById('kpi-capital-paid').textContent = fmt(totPrin);
-
-      const accBal = latest ? latest.accBalance : 26.15;
-      const accElem = document.getElementById('kpi-acc-balance');
-      accElem.textContent = (accBal >= 0 ? '+' : '') + fmt(accBal);
-      accElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+      if (document.getElementById('kpi-interest-paid')) document.getElementById('kpi-interest-paid').textContent = fmt(totInt);
+      if (document.getElementById('kpi-capital-paid')) document.getElementById('kpi-capital-paid').textContent = fmt(totPrin);
 
       document.getElementById('val-debt-laura').textContent = fmt(settings.internalDebtLaura);
       document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak);
@@ -2251,6 +2253,16 @@
         }
       };
       reader.readAsText(file);
+    }
+
+    function clearAllData() {
+      if (confirm("¿Estás seguro de que deseas borrar TODOS los pagos y empezar desde cero? Se vaciará el histórico para que introduzcas tus propios datos.")) {
+        payments = [];
+        recomputeBalances();
+        saveStateToStorage();
+        updateDashboardUI();
+        showToast("Se han borrado todos los datos. Puedes empezar de cero.");
+      }
     }
 
     function resetToExcelOriginal() {
