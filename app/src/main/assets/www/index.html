@@ -9,10 +9,38 @@
   <title>Hipoteca Conjunta - Cálculo, Reparto y Amortización</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- Firebase Web SDKs (Auth & Firestore) -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase Modular SDKs (Same configuration as Seguimiento Solar) -->
+  <script type="module">
+    import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      projectId: "sacred-acronym-bp497",
+      appId: "1:921561338431:web:b9c52c02c3292b95425e8a",
+      apiKey: "AIzaSyC_gO0xNycwLrXqK7UrBN_bXt6ceVhz0uk",
+      authDomain: "sacred-acronym-bp497.firebaseapp.com",
+      firestoreDatabaseId: "ai-studio-cb0127ac-95c8-43f4-ba7c-4211960b1661",
+      storageBucket: "sacred-acronym-bp497.firebasestorage.app",
+      messagingSenderId: "921561338431"
+    };
+
+    try {
+      const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+      window.firebaseSync = {
+        app, auth, db, doc, setDoc, onSnapshot, getDoc, signInAnonymously, onAuthStateChanged
+      };
+
+      // Sign in anonymously in background
+      signInAnonymously(auth).catch(e => console.warn("Anon auth:", e));
+      window.dispatchEvent(new CustomEvent('firebase-sync-ready'));
+    } catch(err) {
+      console.warn("Firebase init notice:", err);
+    }
+  </script>
 
   <style>
     /* ==========================================================================
@@ -936,22 +964,12 @@
       </nav>
 
       <div class="header-actions" style="display: flex; align-items: center; gap: 8px;">
-        <!-- Logged In User Pill -->
-        <div id="auth-header-logged-in" style="display: none; align-items: center; gap: 8px;">
-          <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--primary); background: rgba(16, 185, 129, 0.1); padding: 5px 11px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.25);">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--primary);"></span>
-            <span id="user-display-email" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700;">usuario</span>
-          </span>
-          <button onclick="handleLogout()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px; color: var(--text-muted);" title="Cerrar sesión">Salir</button>
-        </div>
-
-        <!-- Logged Out Login Button -->
-        <div id="auth-header-logged-out" style="display: flex; align-items: center;">
-          <button onclick="openAuthModal('login')" class="btn btn-secondary btn-sm" style="color: var(--secondary); border-color: rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.08); font-size: 12px; padding: 5px 11px; display: flex; align-items: center; gap: 5px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
-            <span>Iniciar Sesión / Nube</span>
-          </button>
-        </div>
+        <!-- Cloud Connect Pill (Seguimiento Solar style) -->
+        <button onclick="openSyncModal()" id="btn-sync-pill" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 6px 12px; border-radius: 8px; background: rgba(20, 32, 50, 0.85); border: 1px solid rgba(255, 255, 255, 0.12); cursor: pointer;">
+          <span id="sync-pill-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+          <span id="sync-pill-label" style="font-weight: 600;">Conectar cuenta</span>
+        </button>
 
         <button onclick="openModal()" class="btn btn-primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -960,21 +978,16 @@
       </div>
     </header>
 
-    <!-- Cloud Sync & Multi-Device Banner -->
-    <div id="cloud-sync-banner" style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-sm); padding: 9px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+    <!-- Cloud Sync Status Bar -->
+    <div id="cloud-sync-banner" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 9px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
       <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
-        <div id="cloud-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--amber);"></div>
-        <span id="cloud-status-title" style="color: #fff; font-weight: 700;">Nube Multidispositivo Firebase:</span>
-        <span id="cloud-status-desc" style="color: var(--text-muted);">Inicia sesión para sincronizar tus datos en tiempo real entre tu móvil y tu ordenador. Tus datos solo serán visibles para ti.</span>
+        <span id="banner-sync-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+        <span style="color: #fff; font-weight: 700;">Sincronización en la Nube Firestore:</span>
+        <span id="banner-sync-text" style="color: var(--text-muted);">Conectado. Tus datos se sincronizan automáticamente en tiempo real.</span>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <button id="btn-cloud-login" onclick="openAuthModal('login')" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 4px 10px;">
-          Entrar / Registrarme
-        </button>
-        <button onclick="switchTab('settings')" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">
-          Ajustes Nube
-        </button>
-      </div>
+      <button onclick="openSyncModal()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; color: var(--primary);">
+        Cambiar Cuenta
+      </button>
     </div>
 
     <!-- ============================================== -->
@@ -1405,69 +1418,34 @@
         </div>
       </div>
 
-      <!-- Firebase Cloud Setup Card -->
+      <!-- Firebase Cloud Setup Card (Igual a Seguimiento Solar) -->
       <div class="sim-card" id="firebase-settings-card">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
           <div>
             <h3 style="font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
-              Sincronización en la Nube con Firebase (Multidispositivo & Privada)
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+              Sincronización en la Nube con Firestore (Multidispositivo)
             </h3>
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
-              Sincroniza tus datos en tiempo real entre tu móvil y tu PC. Cada usuario autenticado tiene sus datos 100% aislados en Firestore. Nadie con la URL pública de GitHub puede ver tus números.
+              Tus datos se sincronizan automáticamente en tiempo real entre tu móvil y tu ordenador con tu identificador.
             </p>
           </div>
-          <div id="fb-connection-badge" style="font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3);">
-            Estado: Modo Local
+          <div id="settings-sync-badge" style="font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: var(--primary); border: 1px solid rgba(16, 185, 129, 0.3);">
+            Conectado a Firestore
           </div>
         </div>
 
-        <!-- Logged user panel -->
-        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div>
-            <div style="font-size: 11px; color: var(--text-muted);">Usuario autenticado en la nube:</div>
-            <div id="fb-user-email-label" style="font-size: 14px; font-weight: 800; color: #fff; margin-top: 2px;">Ninguno (Sesión no iniciada)</div>
-            <div id="fb-user-sync-status" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Inicia sesión con tu correo para cargar y guardar tus datos en Firestore.</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Identificador / Cuenta activa:</div>
+            <div id="settings-sync-account-label" style="font-size: 15px; font-weight: 800; color: #84cc16; margin-top: 2px;">mi_sistema_hipoteca</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Cualquier dispositivo que introduzca este identificador tendrá tus mismos datos sincronizados.</div>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button id="fb-btn-login-panel" onclick="openAuthModal('login')" class="btn btn-primary btn-sm">Iniciar Sesión / Nube</button>
-            <button id="fb-btn-force-upload" onclick="forceSyncToCloud()" class="btn btn-secondary btn-sm" style="display: none;">☁️ Forzar Guardado en Nube</button>
-            <button id="fb-btn-logout-panel" onclick="handleLogout()" class="btn btn-secondary btn-sm" style="display: none; color: var(--red); border-color: rgba(239, 68, 68, 0.3);">Cerrar Sesión</button>
+            <button onclick="openSyncModal()" class="btn btn-primary btn-sm">Cambiar Cuenta</button>
+            <button onclick="forceCloudSave()" class="btn btn-secondary btn-sm">☁️ Guardar en Nube</button>
           </div>
         </div>
-
-        <!-- Firebase Credentials Accordion -->
-        <details id="fb-creds-details" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px;">
-          <summary style="font-size: 13px; font-weight: 700; color: var(--secondary); cursor: pointer; outline: none;">
-            ⚙️ Configurar / Editar Credenciales de tu Proyecto Firebase (API Key, Project ID...)
-          </summary>
-          <div style="margin-top: 10px; font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-            Pega aquí las credenciales web de tu proyecto Firebase (desde la Consola de Firebase > Configuración del Proyecto > General > Tus aplicaciones web). Se guardarán en tu navegador para conectar este dispositivo con tu nube.
-          </div>
-
-          <div class="form-grid" style="margin-top: 12px;">
-            <div class="form-field">
-              <label>API Key (apiKey):</label>
-              <input type="text" id="fb-cfg-apikey" class="form-input" placeholder="AIzaSy...">
-            </div>
-            <div class="form-field">
-              <label>Auth Domain (authDomain):</label>
-              <input type="text" id="fb-cfg-authdomain" class="form-input" placeholder="tu-proyecto.firebaseapp.com">
-            </div>
-            <div class="form-field">
-              <label>Project ID (projectId):</label>
-              <input type="text" id="fb-cfg-projectid" class="form-input" placeholder="tu-proyecto-id">
-            </div>
-            <div class="form-field">
-              <label>App ID (appId):</label>
-              <input type="text" id="fb-cfg-appid" class="form-input" placeholder="1:123456789:web:abcdef">
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: flex-end; margin-top: 14px; gap: 8px;">
-            <button onclick="saveFirebaseConfigFromInputs()" class="btn btn-primary btn-sm">Guardar y Conectar Firebase</button>
-          </div>
-        </details>
       </div>
     </div>
 
@@ -1645,61 +1623,61 @@
     </div>
   </div>
 
-  <!-- Modal Autenticación Firebase (Iniciar Sesión / Registro) -->
-  <div id="auth-modal" class="modal-backdrop">
-    <div class="modal-sheet" style="max-width: 440px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
-          <h3 id="auth-modal-title" style="font-size: 16px; font-weight: 800; color: #fff;">Acceso a tu Nube Privada</h3>
+  <!-- Modal Conexión & Cuenta (Exacto a Seguimiento Solar) -->
+  <div id="sync-modal" class="modal-backdrop">
+    <div class="modal-sheet" style="max-width: 440px; background: #121c13; border: 1px solid #233725; border-radius: 16px; padding: 22px;">
+      <!-- Modal Header -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 42px; height: 42px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+          </div>
+          <div>
+            <h3 style="font-size: 17px; font-weight: 800; color: #f1f7ef; margin: 0;">Conexión & Cuenta</h3>
+            <p style="font-size: 12px; color: #8ca48a; margin: 2px 0 0 0;">Sincronización en tiempo real con Firestore</p>
+          </div>
         </div>
-        <button onclick="closeAuthModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
+        <button onclick="closeSyncModal()" style="background: none; border: none; color: #8ca48a; cursor: pointer; font-size: 22px; padding: 4px; line-height: 1;">✕</button>
       </div>
 
-      <!-- Auth Tabs: Login vs Register -->
-      <div style="display: flex; background: var(--bg-dark); padding: 3px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid var(--border-color);">
-        <button id="auth-tab-btn-login" onclick="switchAuthTab('login')" type="button" style="flex: 1; padding: 7px; border: none; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--primary); color: #000;">
-          Iniciar Sesión
-        </button>
-        <button id="auth-tab-btn-register" onclick="switchAuthTab('register')" type="button" style="flex: 1; padding: 7px; border: none; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; background: transparent; color: var(--text-muted);">
-          Crear Cuenta
-        </button>
-      </div>
-
-      <div id="auth-info-desc" style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.4;">
-        Introduce tu email y contraseña. Al iniciar sesión, tus datos se sincronizan automáticamente en tu cuenta privada de Firebase.
-      </div>
-
-      <div id="auth-error-box" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 14px; font-size: 12px; color: var(--red);"></div>
-
-      <form id="auth-form" onsubmit="handleAuthSubmit(event)">
-        <div class="form-field" style="margin-bottom: 12px;">
-          <label>Correo Electrónico:</label>
-          <input type="email" id="auth-email-input" class="form-input" placeholder="tu-email@ejemplo.com" required>
+      <!-- Main Box Card -->
+      <div style="background: #162317; border: 1px solid #2d4430; border-radius: 12px; padding: 16px; margin-bottom: 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: #f1f7ef;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#84cc16" stroke-width="2.2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+            <span>Correo o Identificador</span>
+          </div>
+          <span id="sync-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4);">
+            Sistema base
+          </span>
         </div>
 
-        <div class="form-field" style="margin-bottom: 14px;">
-          <label>Contraseña:</label>
-          <input type="password" id="auth-password-input" class="form-input" placeholder="••••••••" minlength="6" required>
-        </div>
+        <p style="font-size: 12px; color: #8ca48a; margin: 0 0 14px 0; line-height: 1.45;">
+          Introduce tu correo electrónico (ej. <strong style="color: #e2e8f0;">ferjrm@hotmail.com</strong>) o tu código. Tus dispositivos que usen este identificador sincronizarán los datos automáticamente.
+        </p>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-          <button type="button" onclick="handlePasswordReset()" style="background: none; border: none; color: var(--secondary); font-size: 11px; cursor: pointer; text-decoration: underline; padding: 0;">
-            ¿Olvidaste tu contraseña?
+        <form onsubmit="handleSyncConnect(event)" style="display: flex; gap: 8px;">
+          <div style="position: relative; flex: 1;">
+            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-1-1l-3 3m2 2l-2 2m-7-1a5 5 0 1 1-7-7 5 5 0 0 1 7 7zm0 0l7 7v3h3v-3l-7-7z"></path></svg>
+            </span>
+            <input type="text" id="sync-input-key" class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-family: monospace; font-size: 13px;" placeholder="ej. mi_hipoteca_2026">
+          </div>
+          <button type="submit" class="btn btn-primary" style="background: #10b981; border: none; font-weight: 700; padding: 0 16px;">
+            Conectar
           </button>
-        </div>
+        </form>
 
-        <div style="display: flex; gap: 8px; justify-content: flex-end;">
-          <button type="button" onclick="closeAuthModal()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" id="auth-submit-btn" class="btn btn-primary">Entrar a mi Nube</button>
+        <div style="font-size: 12px; color: #8ca48a; margin-top: 12px;">
+          Cuenta activa: <span id="sync-active-label" style="color: #84cc16; font-weight: 700;">mi_sistema_hipoteca</span>
         </div>
-      </form>
+      </div>
 
-      <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-dim); text-align: center;">
-        ¿Aún no has configurado tu proyecto Firebase? 
-        <a href="javascript:void(0)" onclick="closeAuthModal(); switchTab('settings');" style="color: var(--secondary); text-decoration: underline;">
-          Configurar credenciales en Ajustes
-        </a>
+      <!-- Close Button -->
+      <div style="display: flex; justify-content: flex-end;">
+        <button onclick="closeSyncModal()" class="btn btn-secondary" style="background: #162317; border-color: #2d4430; color: #ecf5ea; padding: 8px 20px;">
+          Cerrar
+        </button>
       </div>
     </div>
   </div>
@@ -1728,19 +1706,50 @@
 
     let payments = [];
 
-    /* Firebase State Variables */
-    let firebaseApp = null;
-    let firebaseAuth = null;
-    let firebaseDb = null;
-    let currentUser = null;
+    /* ==========================================================
+       FIRESTORE CLOUD SYNCHRONIZATION (IDENTICAL TO SEGUIMIENTO SOLAR)
+       ========================================================== */
+    const DEFAULT_SYNC_KEY = 'mi_sistema_hipoteca';
+    let currentSyncKey = DEFAULT_SYNC_KEY;
     let firestoreUnsubscribe = null;
-    let currentAuthTab = 'login';
+
+    function sanitizeSyncKey(val) {
+      if (!val) return DEFAULT_SYNC_KEY;
+      return val.trim().toLowerCase().replace(/[\/\\#\$\.\[\]]/g, '_') || DEFAULT_SYNC_KEY;
+    }
+
+    function getSyncKey() {
+      try {
+        return sanitizeSyncKey(localStorage.getItem('mortgage_sync_key') || DEFAULT_SYNC_KEY);
+      } catch (e) {
+        return DEFAULT_SYNC_KEY;
+      }
+    }
+
+    function setSyncKey(val) {
+      const clean = sanitizeSyncKey(val);
+      try {
+        localStorage.setItem('mortgage_sync_key', clean);
+      } catch (e) {}
+      currentSyncKey = clean;
+      updateSyncUI();
+      connectFirestoreSync(clean);
+    }
 
     // Initialize application
     window.addEventListener('DOMContentLoaded', () => {
+      currentSyncKey = getSyncKey();
       loadStateFromStorage();
       updateDashboardUI();
-      initFirebase();
+      updateSyncUI();
+
+      if (window.firebaseSync && window.firebaseSync.db) {
+        connectFirestoreSync(currentSyncKey);
+      } else {
+        window.addEventListener('firebase-sync-ready', () => {
+          connectFirestoreSync(currentSyncKey);
+        });
+      }
     });
 
     function loadStateFromStorage() {
@@ -1767,7 +1776,7 @@
         localStorage.setItem('hipoteca_cfg_v5', JSON.stringify(settings));
         localStorage.setItem('hipoteca_payments_v5', JSON.stringify(payments));
       } catch (err) {}
-      syncToFirestoreIfConnected();
+      syncToFirestoreIfAvailable();
     }
 
     function getOriginalExcelSeed() {
@@ -2599,317 +2608,158 @@
       }
     }
 
-    /* ========================================================
-       FIREBASE AUTHENTICATION & MULTI-DEVICE CLOUD SYNC ENGINE
-       ======================================================== */
-    function initFirebase() {
-      if (typeof firebase === 'undefined') {
-        updateFirebaseBadge(false, "SDK no disponible");
-        return;
+    /* ==========================================================
+       FIRESTORE MULTI-DEVICE SYNC ENGINE (SEGUIMIENTO SOLAR STYLE)
+       ========================================================== */
+    function updateSyncUI() {
+      const isBase = currentSyncKey === DEFAULT_SYNC_KEY;
+      
+      // Header pill
+      const pillLabel = document.getElementById('sync-pill-label');
+      const pillDot = document.getElementById('sync-pill-dot');
+      if (pillLabel) {
+        pillLabel.textContent = isBase ? 'Conectar cuenta' : currentSyncKey;
+      }
+      if (pillDot) {
+        pillDot.style.background = isBase ? '#f59e0b' : '#10b981';
       }
 
-      const savedCfg = localStorage.getItem('mortgage_firebase_cfg');
-      let fbConfig = null;
-      if (savedCfg) {
-        try { fbConfig = JSON.parse(savedCfg); } catch (e) {}
+      // Banner text
+      const bannerText = document.getElementById('banner-sync-text');
+      const bannerDot = document.getElementById('banner-sync-dot');
+      if (bannerText) {
+        bannerText.textContent = isBase
+          ? "Conectado al sistema base. Pulsa en 'Cambiar Cuenta' para sincronizar con tu propio identificador."
+          : `🟢 Conectado a la cuenta: ${currentSyncKey}. Los cambios se sincronizan en tiempo real.`;
+      }
+      if (bannerDot) {
+        bannerDot.style.background = isBase ? '#f59e0b' : '#10b981';
       }
 
-      if (fbConfig && fbConfig.apiKey && fbConfig.projectId) {
-        try {
-          if (!firebase.apps.length) {
-            firebaseApp = firebase.initializeApp(fbConfig);
+      // Modal labels & badges
+      const modalBadge = document.getElementById('sync-status-badge');
+      const activeLabel = document.getElementById('sync-active-label');
+      const inputKey = document.getElementById('sync-input-key');
+      if (modalBadge) {
+        modalBadge.textContent = isBase ? 'Sistema base' : '🟢 Conectado';
+        modalBadge.style.background = isBase ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+        modalBadge.style.color = isBase ? '#fcd34d' : '#84cc16';
+        modalBadge.style.borderColor = isBase ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)';
+      }
+      if (activeLabel) {
+        activeLabel.textContent = currentSyncKey;
+      }
+      if (inputKey && !inputKey.value) {
+        inputKey.value = isBase ? '' : currentSyncKey;
+      }
+
+      // Settings card
+      const settingsAccLabel = document.getElementById('settings-sync-account-label');
+      const settingsBadge = document.getElementById('settings-sync-badge');
+      if (settingsAccLabel) {
+        settingsAccLabel.textContent = currentSyncKey;
+      }
+      if (settingsBadge) {
+        settingsBadge.textContent = isBase ? 'Sistema base' : '🟢 Conectado a Firestore';
+        settingsBadge.style.color = isBase ? '#fcd34d' : 'var(--primary)';
+      }
+    }
+
+    function connectFirestoreSync(key) {
+      if (!window.firebaseSync || !window.firebaseSync.db) return;
+      const sync = window.firebaseSync;
+      const cleanKey = sanitizeSyncKey(key);
+
+      if (firestoreUnsubscribe) {
+        try { firestoreUnsubscribe(); } catch(e) {}
+        firestoreUnsubscribe = null;
+      }
+
+      try {
+        const docRef = sync.doc(sync.db, "shared_mortgages", cleanKey);
+        firestoreUnsubscribe = sync.onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            let changed = false;
+            if (data.settings && JSON.stringify(data.settings) !== JSON.stringify(settings)) {
+              settings = { ...settings, ...data.settings };
+              changed = true;
+            }
+            if (data.payments && Array.isArray(data.payments)) {
+              payments = data.payments;
+              changed = true;
+            }
+            if (changed) {
+              try {
+                localStorage.setItem('hipoteca_cfg_v5', JSON.stringify(settings));
+                localStorage.setItem('hipoteca_payments_v5', JSON.stringify(payments));
+              } catch(e) {}
+              recomputeBalances();
+              updateDashboardUI();
+              showToast("Datos sincronizados desde la nube ☁️");
+            }
           } else {
-            firebaseApp = firebase.app();
+            // Auto-seed cloud document if empty
+            syncToFirestoreIfAvailable(true);
           }
-          firebaseAuth = firebase.auth();
-          firebaseDb = firebase.firestore();
-
-          updateFirebaseBadge(true, "Firebase Conectado");
-
-          firebaseAuth.onAuthStateChanged(user => {
-            handleAuthStateChange(user);
-          });
-        } catch (err) {
-          console.warn("Error al inicializar Firebase:", err);
-          updateFirebaseBadge(false, "Error de inicialización");
-        }
-      } else {
-        updateFirebaseBadge(false, "Modo Local");
-      }
-      fillFirebaseConfigInputs();
-    }
-
-    function updateFirebaseBadge(connected, text) {
-      const badge = document.getElementById('fb-connection-badge');
-      if (badge) {
-        badge.textContent = "Estado: " + text;
-        badge.style.color = connected ? 'var(--primary)' : 'var(--amber)';
-        badge.style.background = connected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
-        badge.style.borderColor = connected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+        }, (err) => {
+          console.warn("Firestore sync warning:", err);
+        });
+      } catch (err) {
+        console.warn("Error attaching Firestore listener:", err);
       }
     }
 
-    function handleAuthStateChange(user) {
-      currentUser = user;
-      const loggedInHeader = document.getElementById('auth-header-logged-in');
-      const loggedOutHeader = document.getElementById('auth-header-logged-out');
-      const userDisplayEmail = document.getElementById('user-display-email');
-      const cloudStatusDot = document.getElementById('cloud-status-dot');
-      const cloudStatusTitle = document.getElementById('cloud-status-title');
-      const cloudStatusDesc = document.getElementById('cloud-status-desc');
-      const btnCloudLogin = document.getElementById('btn-cloud-login');
+    function syncToFirestoreIfAvailable(silent = false) {
+      if (!window.firebaseSync || !window.firebaseSync.db) return;
+      const sync = window.firebaseSync;
+      const cleanKey = getSyncKey();
 
-      const fbUserEmailLabel = document.getElementById('fb-user-email-label');
-      const fbUserSyncStatus = document.getElementById('fb-user-sync-status');
-      const fbBtnLoginPanel = document.getElementById('fb-btn-login-panel');
-      const fbBtnLogoutPanel = document.getElementById('fb-btn-logout-panel');
-      const fbBtnForceUpload = document.getElementById('fb-btn-force-upload');
-
-      if (user) {
-        if (loggedInHeader) loggedInHeader.style.display = 'flex';
-        if (loggedOutHeader) loggedOutHeader.style.display = 'none';
-        if (userDisplayEmail) userDisplayEmail.textContent = user.email || 'Mi Usuario';
-
-        if (cloudStatusDot) cloudStatusDot.style.background = 'var(--primary)';
-        if (cloudStatusTitle) cloudStatusTitle.textContent = "🟢 Sincronizado en la Nube:";
-        if (cloudStatusDesc) cloudStatusDesc.textContent = `Sesión activa como ${user.email}. Tus datos se sincronizan automáticamente en tiempo real.`;
-        if (btnCloudLogin) btnCloudLogin.style.display = 'none';
-
-        if (fbUserEmailLabel) fbUserEmailLabel.textContent = user.email;
-        if (fbUserSyncStatus) {
-          fbUserSyncStatus.textContent = "🟢 Conexión segura activa. Tus datos solo son visibles para este usuario.";
-          fbUserSyncStatus.style.color = "var(--primary)";
-        }
-        if (fbBtnLoginPanel) fbBtnLoginPanel.style.display = 'none';
-        if (fbBtnLogoutPanel) fbBtnLogoutPanel.style.display = 'inline-block';
-        if (fbBtnForceUpload) fbBtnForceUpload.style.display = 'inline-block';
-
-        listenToUserFirestore(user.uid);
-      } else {
-        if (loggedInHeader) loggedInHeader.style.display = 'none';
-        if (loggedOutHeader) loggedOutHeader.style.display = 'flex';
-
-        if (cloudStatusDot) cloudStatusDot.style.background = 'var(--amber)';
-        if (cloudStatusTitle) cloudStatusTitle.textContent = "Nube Multidispositivo Firebase:";
-        if (cloudStatusDesc) cloudStatusDesc.textContent = "Inicia sesión para sincronizar tus datos en tiempo real entre tu móvil y tu ordenador. Tus datos solo serán visibles para ti.";
-        if (btnCloudLogin) btnCloudLogin.style.display = 'inline-block';
-
-        if (fbUserEmailLabel) fbUserEmailLabel.textContent = "Ninguno (Sesión no iniciada)";
-        if (fbUserSyncStatus) {
-          fbUserSyncStatus.textContent = "Inicia sesión con tu correo para cargar y guardar tus datos en Firestore.";
-          fbUserSyncStatus.style.color = "var(--text-muted)";
-        }
-        if (fbBtnLoginPanel) fbBtnLoginPanel.style.display = 'inline-block';
-        if (fbBtnLogoutPanel) fbBtnLogoutPanel.style.display = 'none';
-        if (fbBtnForceUpload) fbBtnForceUpload.style.display = 'none';
-
-        if (firestoreUnsubscribe) {
-          firestoreUnsubscribe();
-          firestoreUnsubscribe = null;
-        }
-      }
-    }
-
-    function listenToUserFirestore(uid) {
-      if (!firebaseDb) return;
-      if (firestoreUnsubscribe) firestoreUnsubscribe();
-
-      const userDocRef = firebaseDb.collection("users").doc(uid).collection("mortgage").doc("active");
-      firestoreUnsubscribe = userDocRef.onSnapshot(doc => {
-        if (doc.exists) {
-          const cloudData = doc.data();
-          let changed = false;
-          if (cloudData.settings && JSON.stringify(cloudData.settings) !== JSON.stringify(settings)) {
-            settings = { ...settings, ...cloudData.settings };
-            changed = true;
-          }
-          if (cloudData.payments && Array.isArray(cloudData.payments)) {
-            payments = cloudData.payments;
-            changed = true;
-          }
-          if (changed) {
-            try {
-              localStorage.setItem('hipoteca_cfg_v5', JSON.stringify(settings));
-              localStorage.setItem('hipoteca_payments_v5', JSON.stringify(payments));
-            } catch(e) {}
-            recomputeBalances();
-            updateDashboardUI();
-            showToast("Datos sincronizados desde la Nube ☁️");
-          }
-        } else {
-          syncToFirestoreIfConnected(true);
-        }
-      }, err => {
-        console.warn("Firestore listen error:", err);
-      });
-    }
-
-    function syncToFirestoreIfConnected(isInitial = false) {
-      if (currentUser && firebaseDb) {
-        const userDocRef = firebaseDb.collection("users").doc(currentUser.uid).collection("mortgage").doc("active");
-        userDocRef.set({
+      try {
+        const docRef = sync.doc(sync.db, "shared_mortgages", cleanKey);
+        sync.setDoc(docRef, {
           settings: settings,
           payments: payments,
-          updatedAt: Date.now(),
-          userEmail: currentUser.email
+          updatedAt: Date.now()
         }, { merge: true }).then(() => {
-          if (!isInitial) showToast("Sincronizado con Firebase ☁️");
+          if (!silent) showToast("Sincronizado en la nube ☁️");
         }).catch(err => {
-          console.error("Error guardando en Firestore:", err);
+          console.warn("Error guardando en Firestore:", err);
         });
+      } catch (err) {
+        console.warn("Sync error:", err);
       }
     }
 
-    function forceSyncToCloud() {
-      if (!currentUser) {
-        openAuthModal('login');
-        return;
+    function openSyncModal() {
+      const input = document.getElementById('sync-input-key');
+      if (input) {
+        input.value = currentSyncKey === DEFAULT_SYNC_KEY ? '' : currentSyncKey;
       }
-      syncToFirestoreIfConnected(false);
-      showToast("Datos guardados en la nube");
+      updateSyncUI();
+      document.getElementById('sync-modal').classList.add('active');
     }
 
-    function openAuthModal(mode = 'login') {
-      if (!firebaseAuth) {
-        showToast("Primero configura tus credenciales de Firebase en Ajustes");
-        switchTab('settings');
-        const details = document.getElementById('fb-creds-details');
-        if (details) details.open = true;
-        return;
-      }
-      switchAuthTab(mode);
-      const errBox = document.getElementById('auth-error-box');
-      if (errBox) errBox.style.display = 'none';
-      document.getElementById('auth-modal').classList.add('active');
+    function closeSyncModal() {
+      document.getElementById('sync-modal').classList.remove('active');
     }
 
-    function closeAuthModal() {
-      document.getElementById('auth-modal').classList.remove('active');
-    }
-
-    function switchAuthTab(tab) {
-      currentAuthTab = tab;
-      const isLogin = tab === 'login';
-      const btnLogin = document.getElementById('auth-tab-btn-login');
-      const btnRegister = document.getElementById('auth-tab-btn-register');
-      const title = document.getElementById('auth-modal-title');
-      const desc = document.getElementById('auth-info-desc');
-      const submitBtn = document.getElementById('auth-submit-btn');
-
-      if (btnLogin) {
-        btnLogin.style.background = isLogin ? 'var(--primary)' : 'transparent';
-        btnLogin.style.color = isLogin ? '#000' : 'var(--text-muted)';
-      }
-      if (btnRegister) {
-        btnRegister.style.background = !isLogin ? 'var(--primary)' : 'transparent';
-        btnRegister.style.color = !isLogin ? '#000' : 'var(--text-muted)';
-      }
-      if (title) title.textContent = isLogin ? "Iniciar Sesión en tu Nube" : "Crear Cuenta Privada en tu Nube";
-      if (desc) desc.textContent = isLogin 
-        ? "Introduce tu email y contraseña para acceder a tus datos privados sincronizados."
-        : "Crea una cuenta para guardar tus datos en tu base de datos privada de Firebase.";
-      if (submitBtn) submitBtn.textContent = isLogin ? "Entrar a mi Nube" : "Crear mi Cuenta";
-    }
-
-    function handleAuthSubmit(e) {
+    function handleSyncConnect(e) {
       e.preventDefault();
-      const email = document.getElementById('auth-email-input').value.trim();
-      const password = document.getElementById('auth-password-input').value;
-      const errBox = document.getElementById('auth-error-box');
-      errBox.style.display = 'none';
-
-      if (!firebaseAuth) {
-        errBox.textContent = "Firebase no está inicializado. Configura las credenciales en Ajustes.";
-        errBox.style.display = 'block';
+      const input = document.getElementById('sync-input-key');
+      const val = (input.value || '').trim();
+      if (!val) {
+        alert("Por favor introduce tu correo electrónico o un código identificador.");
         return;
       }
-
-      const submitBtn = document.getElementById('auth-submit-btn');
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Conectando...";
-
-      const authAction = currentAuthTab === 'login'
-        ? firebaseAuth.signInWithEmailAndPassword(email, password)
-        : firebaseAuth.createUserWithEmailAndPassword(email, password);
-
-      authAction.then(() => {
-        closeAuthModal();
-        showToast(currentAuthTab === 'login' ? "Sesión iniciada con éxito" : "Cuenta creada y sincronizada");
-        submitBtn.disabled = false;
-      }).catch(err => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = currentAuthTab === 'login' ? "Entrar a mi Nube" : "Crear mi Cuenta";
-        let msg = "Error al autenticar: " + err.message;
-        if (err.code === 'auth/user-not-found') msg = "No existe ninguna cuenta con este correo. Cambia a 'Crear Cuenta'.";
-        else if (err.code === 'auth/wrong-password') msg = "Contraseña incorrecta. Compruébala o pulsa en recuperar.";
-        else if (err.code === 'auth/email-already-in-use') msg = "Ya existe una cuenta con este correo. Usa 'Iniciar Sesión'.";
-        else if (err.code === 'auth/weak-password') msg = "La contraseña debe tener al menos 6 caracteres.";
-        else if (err.code === 'auth/invalid-email') msg = "Formato de correo no válido.";
-        errBox.textContent = msg;
-        errBox.style.display = 'block';
-      });
+      setSyncKey(val);
+      closeSyncModal();
+      showToast("Conectado a: " + val + " ☁️");
     }
 
-    function handleLogout() {
-      if (confirm("¿Deseas cerrar la sesión en la nube?")) {
-        if (firebaseAuth) {
-          firebaseAuth.signOut().then(() => {
-            showToast("Sesión cerrada");
-          });
-        }
-      }
-    }
-
-    function handlePasswordReset() {
-      const email = document.getElementById('auth-email-input').value.trim();
-      if (!email) {
-        alert("Por favor introduce tu correo electrónico arriba para enviarte el enlace de restablecimiento.");
-        return;
-      }
-      if (firebaseAuth) {
-        firebaseAuth.sendPasswordResetEmail(email).then(() => {
-          showToast("Enlace de restablecimiento enviado a tu correo");
-        }).catch(err => {
-          alert("Error: " + err.message);
-        });
-      }
-    }
-
-    function fillFirebaseConfigInputs() {
-      const savedCfg = localStorage.getItem('mortgage_firebase_cfg');
-      if (savedCfg) {
-        try {
-          const cfg = JSON.parse(savedCfg);
-          if (document.getElementById('fb-cfg-apikey')) document.getElementById('fb-cfg-apikey').value = cfg.apiKey || '';
-          if (document.getElementById('fb-cfg-authdomain')) document.getElementById('fb-cfg-authdomain').value = cfg.authDomain || '';
-          if (document.getElementById('fb-cfg-projectid')) document.getElementById('fb-cfg-projectid').value = cfg.projectId || '';
-          if (document.getElementById('fb-cfg-appid')) document.getElementById('fb-cfg-appid').value = cfg.appId || '';
-        } catch(e) {}
-      }
-    }
-
-    function saveFirebaseConfigFromInputs() {
-      const apiKey = (document.getElementById('fb-cfg-apikey').value || '').trim();
-      const authDomain = (document.getElementById('fb-cfg-authdomain').value || '').trim();
-      const projectId = (document.getElementById('fb-cfg-projectid').value || '').trim();
-      const appId = (document.getElementById('fb-cfg-appid').value || '').trim();
-
-      if (!apiKey || !projectId) {
-        alert("Por favor introduce al menos el API Key y el Project ID de tu proyecto Firebase.");
-        return;
-      }
-
-      const cfg = {
-        apiKey,
-        authDomain: authDomain || `${projectId}.firebaseapp.com`,
-        projectId,
-        storageBucket: `${projectId}.appspot.com`,
-        appId
-      };
-
-      localStorage.setItem('mortgage_firebase_cfg', JSON.stringify(cfg));
-      showToast("Configuración guardada. Conectando con Firebase...");
-      initFirebase();
+    function forceCloudSave() {
+      syncToFirestoreIfAvailable(false);
+      showToast("Guardado forzado en Firestore");
     }
 
     function showToast(msg) {
