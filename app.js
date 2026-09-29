@@ -13,10 +13,10 @@ let settings = {
   annualInterestRate: 1.85,
   coOwner1Name: "Laura",
   coOwner2Name: "Rak",
-  coOwner1Percentage: 32.27,
-  coOwner2Percentage: 67.73,
-  internalDebtLaura: 33486.0,
-  internalDebtRak: 68266.0
+  coOwner1Percentage: 43.94,
+  coOwner2Percentage: 56.06,
+  internalDebtLaura: 53500.0,
+  internalDebtRak: 68266.32
 };
 
 let revisions = [
@@ -26,63 +26,159 @@ let revisions = [
     startYear: 2020,
     startMonth: 11,
     capTotal: 121766.32,
-    capLaura: 39294.00,
-    pctLaura: 32.27,
-    feeTotal: 513.81,
-    intTotal: 187.69,
-    prinTotal: 326.12,
-    lauraFee: 165.81,
-    rakFee: 348.00,
-    lauraInt: 60.57,
-    lauraPrin: 105.24
+    capLaura: 53500.00,
+    pctLaura: 43.94,
+    feeTotal: 645.54,
+    intTotal: 131.73,
+    prinTotal: 513.81,
+    lauraFee: 283.65,
+    rakFee: 361.89,
+    lauraInt: 57.88,
+    lauraPrin: 225.77
   },
   {
     id: 2,
-    name: "1ª Rev. 30 Noviembre 2022",
-    startYear: 2022,
+    name: "1ª Rev. 30 Noviembre 2021",
+    startYear: 2021,
     startMonth: 12,
-    capTotal: 114200.00,
-    capLaura: 36850.00,
-    pctLaura: 32.27,
-    feeTotal: 513.81,
+    capTotal: 94880.43,
+    capLaura: 30557.69,
+    pctLaura: 32.21,
+    feeTotal: 520.95,
     intTotal: 176.00,
-    prinTotal: 337.81,
-    lauraFee: 165.81,
-    rakFee: 348.00,
-    lauraInt: 56.80,
-    lauraPrin: 109.01
+    prinTotal: 344.95,
+    lauraFee: 167.80,
+    rakFee: 353.15,
+    lauraInt: 56.69,
+    lauraPrin: 111.11
   },
   {
     id: 3,
-    name: "2ª Rev. 1 Febrero 2023",
-    startYear: 2023,
-    startMonth: 2,
-    capTotal: 113500.00,
-    capLaura: 36626.00,
+    name: "Revisión Julio 2022",
+    startYear: 2022,
+    startMonth: 8,
+    capTotal: 91010.00,
+    capLaura: 29370.76,
     pctLaura: 32.27,
-    feeTotal: 560.20,
-    intTotal: 210.00,
-    prinTotal: 350.20,
-    lauraFee: 180.78,
-    rakFee: 379.42,
-    lauraInt: 67.77,
-    lauraPrin: 113.01
+    feeTotal: 570.32,
+    intTotal: 176.50,
+    prinTotal: 393.82,
+    lauraFee: 184.04,
+    rakFee: 386.28,
+    lauraInt: 56.96,
+    lauraPrin: 127.08
   },
   {
     id: 4,
-    name: "3ª Rev. 1 Julio/Agosto 2023",
+    name: "Revisión Diciembre 2022",
+    startYear: 2022,
+    startMonth: 12,
+    capTotal: 88656.77,
+    capLaura: 28719.25,
+    pctLaura: 32.39,
+    feeTotal: 581.73,
+    intTotal: 176.00,
+    prinTotal: 405.73,
+    lauraFee: 188.42,
+    rakFee: 393.31,
+    lauraInt: 57.01,
+    lauraPrin: 131.41
+  },
+  {
+    id: 5,
+    name: "Revisión Febrero 2023",
+    startYear: 2023,
+    startMonth: 2,
+    capTotal: 88230.34,
+    capLaura: 28443.46,
+    pctLaura: 32.24,
+    feeTotal: 666.44,
+    intTotal: 210.00,
+    prinTotal: 456.44,
+    lauraFee: 214.86,
+    rakFee: 451.58,
+    lauraInt: 67.70,
+    lauraPrin: 147.16
+  },
+  {
+    id: 6,
+    name: "Revisión Julio 2023",
     startYear: 2023,
     startMonth: 8,
-    capTotal: 84704.60,
-    capLaura: 27334.17,
+    capTotal: 86020.00,
+    capLaura: 27758.08,
     pctLaura: 32.27,
-    feeTotal: 590.45,
+    feeTotal: 706.02,
     intTotal: 235.00,
-    prinTotal: 355.45,
-    lauraFee: 190.54,
-    rakFee: 399.91,
+    prinTotal: 471.02,
+    lauraFee: 227.83,
+    rakFee: 478.19,
     lauraInt: 75.83,
-    lauraPrin: 114.71
+    lauraPrin: 152.00
+  },
+  {
+    id: 7,
+    name: "Revisión Diciembre 2023",
+    startYear: 2023,
+    startMonth: 12,
+    capTotal: 84422.79,
+    capLaura: 27331.97,
+    pctLaura: 32.38,
+    feeTotal: 720.14,
+    intTotal: 225.00,
+    prinTotal: 495.14,
+    lauraFee: 233.18,
+    rakFee: 486.96,
+    lauraInt: 72.85,
+    lauraPrin: 160.33
+  },
+  {
+    id: 8,
+    name: "Revisión Febrero 2024",
+    startYear: 2024,
+    startMonth: 2,
+    capTotal: 83710.72,
+    capLaura: 27106.14,
+    pctLaura: 32.38,
+    feeTotal: 707.10,
+    intTotal: 245.00,
+    prinTotal: 462.10,
+    lauraFee: 228.96,
+    rakFee: 478.14,
+    lauraInt: 79.33,
+    lauraPrin: 149.63
+  },
+  {
+    id: 9,
+    name: "Revisión Julio 2024",
+    startYear: 2024,
+    startMonth: 8,
+    capTotal: 81550.00,
+    capLaura: 26403.40,
+    pctLaura: 32.38,
+    feeTotal: 706.00,
+    intTotal: 240.00,
+    prinTotal: 466.00,
+    lauraFee: 228.60,
+    rakFee: 477.40,
+    lauraInt: 77.71,
+    lauraPrin: 150.89
+  },
+  {
+    id: 10,
+    name: "Revisión Diciembre 2024",
+    startYear: 2024,
+    startMonth: 12,
+    capTotal: 80000.00,
+    capLaura: 25718.10,
+    pctLaura: 32.14,
+    feeTotal: 720.12,
+    intTotal: 230.00,
+    prinTotal: 490.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 73.92,
+    lauraPrin: 158.25
   }
 ];
 
@@ -209,7 +305,7 @@ function saveStateToStorage() {
 
 function getOriginalExcelSeed() {
   const rows = [
-    { y: 2020, m: 11, dep: 500, luz: 25.41, seg: 190.58, n: "Seguro anual" },
+    { y: 2020, m: 11, dep: 500, luz: 25.41, seg: 190.58, n: "Inicio Nov 2020 (53.500€ Laura)" },
     { y: 2020, m: 12, dep: 500, luz: 28.10 },
     { y: 2021, m: 1, dep: 500, luz: 24.25 },
     { y: 2021, m: 2, dep: 500, luz: 22.98 },
@@ -221,7 +317,7 @@ function getOriginalExcelSeed() {
     { y: 2021, m: 8, dep: 500, luz: 77.64 },
     { y: 2021, m: 9, dep: 0, luz: 78.66 },
     { y: 2021, m: 10, dep: 0, luz: 87.73, ibi: 184.53, n: "IBI" },
-    { y: 2021, m: 11, dep: 1500, luz: 102.94, ext: 271.56, n: "Extra + Seguro" },
+    { y: 2021, m: 11, dep: 1500, luz: 102.94, ext: 271.56, lauraExtraAmort: 20014, extAmort: 20014, n: "Amortización Laura 20.014€" },
     { y: 2021, m: 12, dep: 500, luz: 85.00 },
     { y: 2022, m: 1, dep: 500, luz: 45.00 },
     { y: 2022, m: 2, dep: 500, luz: 48.00 },
@@ -240,7 +336,7 @@ function getOriginalExcelSeed() {
     { y: 2023, m: 3, dep: 500, luz: 48.00 },
     { y: 2023, m: 4, dep: 500, luz: 45.00 },
     { y: 2023, m: 5, dep: 500, luz: 40.00 },
-    { y: 2023, m: 6, dep: 1000, luz: 50.00, extAmort: 1500, n: "Amortización extra 1500€" },
+    { y: 2023, m: 6, dep: 500, luz: 50.00 },
     { y: 2023, m: 7, dep: 500, luz: 75.00 },
     { y: 2023, m: 8, dep: 500, luz: 80.00 },
     { y: 2023, m: 9, dep: 500, luz: 65.00 },
@@ -282,20 +378,21 @@ function getOriginalExcelSeed() {
     { y: 2026, m: 9, dep: 500, luz: 72.00 }
   ];
 
-  let bal = settings.initialCapital;
-  const rate = settings.annualInterestRate / 100 / 12;
+  let bal = settings.initialCapital || 121766.32;
+  const rate = (settings.annualInterestRate || 1.85) / 100 / 12;
 
   return rows.map((r, idx) => {
     const rev = getActiveRevisionForDate(r.y, r.m);
-    const fee = rev ? rev.feeTotal : 513.81;
-    const interest = bal * rate;
-    const principal = Math.max(0, fee - interest);
+    const fee = rev ? rev.feeTotal : 645.54;
+    const interest = rev ? rev.intTotal : (bal * rate);
+    const principal = rev ? rev.prinTotal : Math.max(0, fee - interest);
     const extra = r.extAmort || 0;
+    const lDiscount = r.lauraExtraAmort || 0;
     bal = Math.max(0, bal - (principal + extra));
 
-    const pct = rev ? rev.pctLaura : (settings.coOwner1Percentage || 32.27);
-    const co1 = fee * (pct / 100);
-    const co2 = Math.max(0, fee - co1);
+    const pct = rev ? rev.pctLaura : (settings.coOwner1Percentage || 43.94);
+    const co1 = rev ? rev.lauraFee : (fee * (pct / 100));
+    const co2 = rev ? rev.rakFee : Math.max(0, fee - co1);
 
     return {
       id: idx + 1,
@@ -313,7 +410,7 @@ function getOriginalExcelSeed() {
       insurance: r.seg || 0,
       ibi: r.ibi || 0,
       otherExtra: r.ext || 0,
-      lauraExtraAmort: 0.0,
+      lauraExtraAmort: lDiscount,
       deposit: r.dep,
       notes: r.n || "Cuota ordinaria",
       remaining: bal
@@ -324,40 +421,42 @@ function getOriginalExcelSeed() {
 function recomputeBalances() {
   payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
-  let bal = settings.initialCapital || 121766.32;
-  const initialPct = (settings.coOwner1Percentage || 32.27) / 100;
-  let capLaura = (settings.internalDebtLaura && settings.internalDebtLaura > 0)
+  let bal = Number(settings.initialCapital) || 121766.32;
+  let capLaura = (settings.internalDebtLaura && Number(settings.internalDebtLaura) > 0)
     ? Number(settings.internalDebtLaura)
-    : (bal * initialPct);
+    : 53500.00;
 
   let accBal = 0;
   let totLauraDiscount = 0;
 
   payments.forEach(p => {
     const rev = getActiveRevisionForDate(p.year, p.month);
-    const lauraPct = (p.totalFee && p.co1) 
-      ? (p.co1 / p.totalFee) 
-      : (rev ? (rev.pctLaura / 100) : initialPct);
+    const fee = Number(p.totalFee) || (rev ? rev.feeTotal : 645.54);
+    const co1 = Number(p.co1) || (rev ? rev.lauraFee : (fee * (rev ? (rev.pctLaura / 100) : 0.4394)));
+    const lauraPct = (fee > 0 && co1 > 0) ? (co1 / fee) : (rev ? (rev.pctLaura / 100) : 0.4394);
 
-    const prin = Number(p.principal) || 0;
+    const prin = Number(p.principal) || (rev ? rev.prinTotal : Math.max(0, fee - (Number(p.interest) || (rev ? rev.intTotal : 0))));
     const ext = Number(p.extra) || 0;
     const lDiscount = Number(p.lauraExtraAmort) || 0;
+    const totalExtraAmort = Math.max(ext, lDiscount);
 
-    // Laura's regular principal amortization from receipt
-    const lauraPrin = prin * lauraPct;
+    // Laura's regular principal amortization in receipt
+    const lauraPrin = (rev && rev.lauraPrin && !p.principal) ? rev.lauraPrin : (prin * lauraPct);
 
     totLauraDiscount += lDiscount;
     p.accLauraDiscount = totLauraDiscount;
 
-    // Laura's pending capital reduces month-by-month
+    // Laura's capital reduces month-by-month
     capLaura = Math.max(0, capLaura - (lauraPrin + lDiscount));
     p.lauraRemaining = capLaura;
 
     // Total bank loan capital reduces
-    bal = Math.max(0, bal - (prin + ext + lDiscount));
+    bal = Math.max(0, bal - (prin + totalExtraAmort));
     p.remaining = bal;
 
-    const co1 = Number(p.co1) || 0;
+    // Rak's capital
+    p.rakRemaining = Math.max(0, bal - capLaura);
+
     const com = Number(p.community) || 0;
     const luz = Number(p.electricity) || 0;
     const derr = Number(p.derramas) || 0;
@@ -412,7 +511,8 @@ function checkCapitalDiscrepancy() {
   
   let expectedCap = rev.capTotal;
   revStartPayments.forEach(p => {
-    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + (Number(p.extra) || 0) + (Number(p.lauraExtraAmort) || 0)));
+    const extA = Math.max(Number(p.extra) || 0, Number(p.lauraExtraAmort) || 0);
+    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + extA));
   });
 
   const diff = Math.abs(latest.remaining - expectedCap);
@@ -434,13 +534,25 @@ function updateDashboardUI() {
     emptyBanner.style.display = hasPayments ? 'none' : 'block';
   }
 
-  const remaining = latest ? latest.remaining : settings.initialCapital;
-  const amortized = Math.max(0, settings.initialCapital - remaining);
-  const pct = settings.initialCapital > 0 ? (amortized / settings.initialCapital) * 100 : 0;
+  const initialTotalCap = Number(settings.initialCapital) || 121766.32;
+  const initialLauraCap = (settings.internalDebtLaura && Number(settings.internalDebtLaura) > 0)
+    ? Number(settings.internalDebtLaura)
+    : 53500.00;
+  const initialRakCap = Math.max(0, initialTotalCap - initialLauraCap);
+
+  const remaining = latest ? latest.remaining : initialTotalCap;
+  const currentLauraCap = latest ? latest.lauraRemaining : initialLauraCap;
+  const currentRakCap = latest ? latest.rakRemaining : initialRakCap;
+
+  const amortizedTotal = Math.max(0, initialTotalCap - remaining);
+  const amortizedLaura = Math.max(0, initialLauraCap - currentLauraCap);
+  const amortizedRak = Math.max(0, initialRakCap - currentRakCap);
+
+  const pct = initialTotalCap > 0 ? (amortizedTotal / initialTotalCap) * 100 : 0;
 
   const fee = latest ? latest.totalFee : (revisions[0] ? revisions[0].feeTotal : 0);
-  const pctLaura = settings.coOwner1Percentage || 32.27;
-  const pctRak = settings.coOwner2Percentage || (100 - pctLaura);
+  const pctLaura = remaining > 0 ? (currentLauraCap / remaining) * 100 : (settings.coOwner1Percentage || 32.27);
+  const pctRak = remaining > 0 ? (currentRakCap / remaining) * 100 : (100 - pctLaura);
   const lauraFee = latest ? latest.co1 : (fee * (pctLaura / 100));
   const rakFee = latest ? latest.co2 : (fee - lauraFee);
 
@@ -487,16 +599,19 @@ function updateDashboardUI() {
     document.getElementById('kpi-exp-luz').textContent = hasPayments ? fmt(latest.electricity) : "0,00 €";
   }
 
-  const initialLauraCap = (settings.internalDebtLaura && settings.internalDebtLaura > 0)
-    ? Number(settings.internalDebtLaura)
-    : (settings.initialCapital * (pctLaura / 100));
-  const currentLauraCap = latest ? latest.lauraRemaining : initialLauraCap;
-
   if (document.getElementById('kpi-laura-remaining')) {
     document.getElementById('kpi-laura-remaining').textContent = fmt(currentLauraCap);
   }
 
-  // Co-owners agreement dynamic percentages
+  // Capital Pendiente Card: 3 Primary Metrics + Amortization
+  if (document.getElementById('card-total-capital')) document.getElementById('card-total-capital').textContent = fmt(remaining);
+  if (document.getElementById('val-debt-laura')) document.getElementById('val-debt-laura').textContent = fmt(currentLauraCap);
+  if (document.getElementById('val-debt-rak')) document.getElementById('val-debt-rak').textContent = fmt(currentRakCap);
+
+  if (document.getElementById('card-amort-laura')) document.getElementById('card-amort-laura').textContent = fmt(amortizedLaura);
+  if (document.getElementById('card-amort-rak')) document.getElementById('card-amort-rak').textContent = fmt(amortizedRak);
+  if (document.getElementById('card-amort-total')) document.getElementById('card-amort-total').textContent = fmt(amortizedTotal);
+
   if (document.getElementById('laura-pct-label')) {
     document.getElementById('laura-pct-label').textContent = pctLaura.toFixed(2).replace('.', ',') + '%';
     document.getElementById('rak-pct-label').textContent = pctRak.toFixed(2).replace('.', ',') + '%';
@@ -527,9 +642,6 @@ function updateDashboardUI() {
     document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
   }
 
-  if (document.getElementById('val-debt-laura')) document.getElementById('val-debt-laura').textContent = fmt(currentLauraCap);
-  if (document.getElementById('val-debt-rak')) document.getElementById('val-debt-rak').textContent = fmt(Math.max(0, remaining - currentLauraCap));
-
   checkCapitalDiscrepancy();
   renderHistoryTable();
   renderRevisionsTable();
@@ -542,13 +654,6 @@ function switchTab(tabId) {
   tabs.forEach(t => {
     const viewEl = document.getElementById('tab-content-' + t);
     if (viewEl) viewEl.style.display = (t === tabId) ? 'block' : 'none';
-
-    // Desktop navbar button
-    const dBtn = document.getElementById('d-btn-' + t);
-    if (dBtn) {
-      if (t === tabId) dBtn.classList.add('active');
-      else dBtn.classList.remove('active');
-    }
 
     // Bottom tabbar button
     const mBtn = document.getElementById('m-btn-' + t);
@@ -758,8 +863,8 @@ function renderHistoryTable() {
       <td style="font-weight: 700; color: ${gapColor};">${p.monthGap >= 0 ? '+' : ''}${fmt(p.monthGap)}</td>
       <td style="font-weight: 800; font-size: 13px; color: ${accColor}; background: ${p.accBalance >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 6px; padding: 6px 10px;">${p.accBalance >= 0 ? '+' : ''}${fmt(p.accBalance)}</td>
       <td style="color: var(--text-muted); font-size: 11px;">${fmt(p.totalFee)}</td>
-      <td style="color: var(--primary); font-weight: 700;">${fmt(p.lauraRemaining)}</td>
-      <td style="color: var(--secondary); font-size: 11px;">${fmt(p.remaining)}</td>
+      <td style="color: var(--primary); font-weight: 800; background: rgba(16, 185, 129, 0.08); border-radius: 4px; padding: 4px 8px;">${fmt(p.lauraRemaining)}</td>
+      <td style="color: #fff; font-weight: 600; font-size: 12px;">${fmt(p.remaining)}</td>
       <td style="text-align: center;">
         <button onclick="openEditModal(${p.id})" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;">Editar</button>
       </td>
