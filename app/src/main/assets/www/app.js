@@ -15,8 +15,8 @@ let settings = {
   coOwner2Name: "Rak",
   coOwner1Percentage: 32.27,
   coOwner2Percentage: 67.73,
-  internalDebtLaura: 71500.0,
-  internalDebtRak: 53500.0
+  internalDebtLaura: 33486.0,
+  internalDebtRak: 68266.0
 };
 
 let revisions = [
@@ -73,8 +73,8 @@ let revisions = [
     name: "3ª Rev. 1 Julio/Agosto 2023",
     startYear: 2023,
     startMonth: 8,
-    capTotal: 111800.00,
-    capLaura: 36077.00,
+    capTotal: 84704.60,
+    capLaura: 27334.17,
     pctLaura: 32.27,
     feeTotal: 590.45,
     intTotal: 235.00,
@@ -135,32 +135,38 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function loadStateFromStorage() {
   try {
-    const storedCfg = localStorage.getItem('hipoteca_cfg_v6');
+    const storedCfg = localStorage.getItem('hipoteca_cfg_v7');
     if (storedCfg) settings = { ...settings, ...JSON.parse(storedCfg) };
 
-    const storedRevs = localStorage.getItem('hipoteca_revs_v6');
-    if (storedRevs) revisions = JSON.parse(storedRevs) || revisions;
+    const storedRevs = localStorage.getItem('hipoteca_revs_v7');
+    if (storedRevs) {
+      const parsedRevs = JSON.parse(storedRevs);
+      if (Array.isArray(parsedRevs) && parsedRevs.length > 0) revisions = parsedRevs;
+    }
 
-    const storedData = localStorage.getItem('hipoteca_payments_v6');
-    if (storedData !== null) {
-      payments = JSON.parse(storedData) || [];
+    const storedPayments = localStorage.getItem('hipoteca_payments_v7');
+    if (storedPayments) {
+      const parsed = JSON.parse(storedPayments);
+      if (Array.isArray(parsed) && parsed.length > 0) payments = parsed;
+      else payments = getOriginalExcelSeed();
     } else {
-      const oldV5 = localStorage.getItem('hipoteca_payments_v5');
-      if (oldV5) payments = JSON.parse(oldV5) || [];
-      else payments = [];
+      // Check for v6 migration
+      const prevPayments = localStorage.getItem('hipoteca_payments_v6');
+      if (prevPayments) payments = JSON.parse(prevPayments);
+      else payments = getOriginalExcelSeed();
       saveStateToStorage();
     }
   } catch (err) {
-    payments = [];
+    payments = getOriginalExcelSeed();
   }
   recomputeBalances();
 }
 
 function saveStateToStorage() {
   try {
-    localStorage.setItem('hipoteca_cfg_v6', JSON.stringify(settings));
-    localStorage.setItem('hipoteca_revs_v6', JSON.stringify(revisions));
-    localStorage.setItem('hipoteca_payments_v6', JSON.stringify(payments));
+    localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
+    localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
+    localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
   } catch (err) {}
   syncToFirestoreIfAvailable();
 }
@@ -289,7 +295,14 @@ function recomputeBalances() {
   payments.forEach(p => {
     const prin = Number(p.principal) || 0;
     const ext = Number(p.extra) || 0;
-    bal = Math.max(0, bal - (prin + ext));
+    const lDiscount = Number(p.lauraExtraAmort) || 0;
+
+    // Track total Laura capital discounts
+    totLauraDiscount += lDiscount;
+    p.accLauraDiscount = totLauraDiscount;
+
+    // Loan capital reduction (regular amortization + extraordinary amortizations)
+    bal = Math.max(0, bal - (prin + ext + lDiscount));
     p.remaining = bal;
 
     const co1 = Number(p.co1) || 0;
@@ -299,13 +312,9 @@ function recomputeBalances() {
     const ins = Number(p.insurance) || 0;
     const ibi = Number(p.ibi) || 0;
     const other = Number(p.otherExtra) || 0;
-    const lDiscount = Number(p.lauraExtraAmort) || 0;
 
-    totLauraDiscount += lDiscount;
-    p.accLauraDiscount = totLauraDiscount;
-
-    // Laura's total monthly expenses include regular expenses + any direct capital discount to Rak
-    const expense = co1 + com + luz + derr + ins + ibi + other + lDiscount;
+    // Laura's total monthly operational expenses (excludes capital discount to avoid fake cash debt!)
+    const expense = co1 + com + luz + derr + ins + ibi + other;
     p.totalExpenses = expense;
     p.monthGap = ((Number(p.deposit) || 0) - expense);
     accBal += p.monthGap;
@@ -330,34 +339,36 @@ function getActiveRevisionForDate(year, month) {
 }
 
 function checkCapitalDiscrepancy() {
+  const banner = document.getElementById('capital-mismatch-banner');
+  const textEl = document.getElementById('capital-mismatch-text');
+  if (!banner || !textEl) return;
+
   if (!payments || payments.length === 0 || !revisions || revisions.length === 0) {
-    const banner = document.getElementById('capital-mismatch-banner');
-    if (banner) banner.style.display = 'none';
+    banner.style.display = 'none';
     return;
   }
 
   const latest = payments[payments.length - 1];
   const rev = getActiveRevisionForDate(latest.year, latest.month);
-  if (!rev) return;
+  if (!rev) {
+    banner.style.display = 'none';
+    return;
+  }
 
-  // Expected trajectory from the revision benchmark:
-  // Find payments since the revision's start date
+  // Calculate expected trajectory from the revision benchmark
   const revStartPayments = payments.filter(p => p.year > rev.startYear || (p.year === rev.startYear && p.month >= rev.startMonth));
   
-  // Calculate expected capital if starting from rev.capTotal
   let expectedCap = rev.capTotal;
   revStartPayments.forEach(p => {
-    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + (Number(p.extra) || 0)));
+    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + (Number(p.extra) || 0) + (Number(p.lauraExtraAmort) || 0)));
   });
 
   const diff = Math.abs(latest.remaining - expectedCap);
-  const banner = document.getElementById('capital-mismatch-banner');
-  const textEl = document.getElementById('capital-mismatch-text');
 
-  if (diff > 50 && banner && textEl) {
+  if (diff > 150) {
     banner.style.display = 'flex';
-    textEl.innerHTML = `Descuadre de <strong>${fmt(diff)}</strong> entre el capital pendiente acumulado (${fmt(latest.remaining)}) y la referencia bancaria (${fmt(expectedCap)}) de <em>${rev.name}</em>.`;
-  } else if (banner) {
+    textEl.innerHTML = `Descuadre de <strong>${fmt(diff)}</strong> entre el capital acumulado (${fmt(latest.remaining)}) y la referencia bancaria (${fmt(expectedCap)}) de <em>${rev.name}</em>.`;
+  } else {
     banner.style.display = 'none';
   }
 }
@@ -425,10 +436,10 @@ function updateDashboardUI() {
   }
 
   const totalLauraDirectAmort = latest ? (latest.accLauraDiscount || 0) : 0;
-  const pendingLauraDebt = Math.max(0, (settings.internalDebtLaura || 0) - totalLauraDirectAmort);
+  const pendingLauraDebt = Math.max(0, (settings.internalDebtLaura || 33486) - totalLauraDirectAmort);
 
   if (document.getElementById('kpi-laura-remaining')) {
-    document.getElementById('kpi-laura-remaining').textContent = fmt(remaining * (pctLaura / 100));
+    document.getElementById('kpi-laura-remaining').textContent = fmt(pendingLauraDebt);
   }
 
   // Co-owners agreement dynamic percentages
@@ -462,8 +473,8 @@ function updateDashboardUI() {
     document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
   }
 
-  document.getElementById('val-debt-laura').textContent = fmt(pendingLauraDebt);
-  document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak || 0);
+  if (document.getElementById('val-debt-laura')) document.getElementById('val-debt-laura').textContent = fmt(pendingLauraDebt);
+  if (document.getElementById('val-debt-rak')) document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak || 68266);
 
   checkCapitalDiscrepancy();
   renderHistoryTable();
@@ -478,27 +489,36 @@ function switchTab(tabId) {
     const viewEl = document.getElementById('tab-content-' + t);
     if (viewEl) viewEl.style.display = (t === tabId) ? 'block' : 'none';
 
-    const dBtn = document.getElementById('d-btn-' + t);
-    if (dBtn) dBtn.classList.toggle('active', t === tabId);
+    const dTab = document.getElementById('d-tab-' + t);
+    if (dTab) {
+      if (t === tabId) dTab.classList.add('active');
+      else dTab.classList.remove('active');
+    }
 
-    const mBtn = document.getElementById('m-btn-' + t);
-    if (mBtn) mBtn.classList.toggle('active', t === tabId);
+    const mTab = document.getElementById('m-tab-' + t);
+    if (mTab) {
+      if (t === tabId) mTab.classList.add('active');
+      else mTab.classList.remove('active');
+    }
   });
 
   if (tabId === 'dashboard') {
-    setTimeout(drawFinancialCharts, 60);
+    setTimeout(drawFinancialCharts, 50);
   }
 }
 
-/* Financial Canvas Charts */
+/* ==========================================================
+   CANVAS CHART DRAWING
+   ========================================================== */
 function drawFinancialCharts() {
-  drawAmortizationCurveChart();
-  drawMonthlyBreakdownChart();
+  drawEvolutionChart();
+  drawReceiptBreakdownChart();
 }
 
-function drawAmortizationCurveChart() {
-  const canvas = document.getElementById('amortCurveCanvas');
+function drawEvolutionChart() {
+  const canvas = document.getElementById('amort-chart-canvas');
   if (!canvas || !canvas.parentElement) return;
+
   const ctx = canvas.getContext('2d');
   const w = canvas.parentElement.clientWidth;
   const h = canvas.parentElement.clientHeight || 240;
@@ -509,74 +529,66 @@ function drawAmortizationCurveChart() {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
 
-  if (payments.length < 2) {
+  if (!payments || payments.length === 0) {
     ctx.fillStyle = '#64748b';
     ctx.font = '12px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText("Registra varios meses para visualizar la curva de saldo", w / 2, h / 2);
+    ctx.fillText("Sin datos registrados", w / 2, h / 2);
     return;
   }
 
   const pad = { top: 20, right: 15, bottom: 25, left: 45 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
-  const maxVal = Math.max(settings.initialCapital, ...payments.map(p => p.remaining || 0));
+  const maxCap = Math.max(settings.initialCapital || 125000, ...payments.map(p => p.remaining || 0));
 
   // Grid
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#64748b';
-  ctx.font = '10px -apple-system, sans-serif';
-  ctx.textAlign = 'right';
-
   for (let i = 0; i <= 4; i++) {
-    const y = pad.top + (plotH * (i / 4));
-    const val = maxVal - (maxVal * (i / 4));
+    const y = pad.top + (plotH / 4) * i;
     ctx.beginPath();
     ctx.moveTo(pad.left, y);
-    ctx.lineTo(w - pad.right, y);
+    ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
-    ctx.fillText(Math.round(val / 1000) + 'k€', pad.left - 6, y + 3);
+
+    const val = maxCap - (maxCap / 4) * i;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText((val / 1000).toFixed(0) + 'k€', pad.left - 6, y + 3);
   }
 
-  // Gradient
+  // Draw Capital Curve
   ctx.beginPath();
-  payments.forEach((p, i) => {
-    const x = pad.left + (i / (payments.length - 1)) * plotW;
-    const normY = (p.remaining || 0) / maxVal;
-    const y = pad.top + plotH - (normY * plotH);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-
-  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
-  grad.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
-  grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
-
-  ctx.lineTo(w - pad.right, pad.top + plotH);
-  ctx.lineTo(pad.left, pad.top + plotH);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // Line
-  ctx.beginPath();
-  payments.forEach((p, i) => {
-    const x = pad.left + (i / (payments.length - 1)) * plotW;
-    const normY = (p.remaining || 0) / maxVal;
-    const y = pad.top + plotH - (normY * plotH);
-    if (i === 0) ctx.moveTo(x, y);
+  payments.forEach((p, idx) => {
+    const x = pad.left + (idx / Math.max(1, payments.length - 1)) * plotW;
+    const y = pad.top + plotH - ((p.remaining || 0) / maxCap) * plotH;
+    if (idx === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
   ctx.strokeStyle = '#10b981';
   ctx.lineWidth = 2.5;
-  ctx.lineJoin = 'round';
   ctx.stroke();
+
+  // Gradient fill
+  const lastX = pad.left + plotW;
+  const firstX = pad.left;
+  const baseLine = pad.top + plotH;
+  ctx.lineTo(lastX, baseLine);
+  ctx.lineTo(firstX, baseLine);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, pad.top, 0, baseLine);
+  grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+  grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
 }
 
-function drawMonthlyBreakdownChart() {
-  const canvas = document.getElementById('breakdownMonthlyCanvas');
+function drawReceiptBreakdownChart() {
+  const canvas = document.getElementById('receipt-chart-canvas');
   if (!canvas || !canvas.parentElement) return;
+
   const ctx = canvas.getContext('2d');
   const w = canvas.parentElement.clientWidth;
   const h = canvas.parentElement.clientHeight || 240;
@@ -685,12 +697,12 @@ function renderHistoryTable() {
       <td style="color: var(--amber); font-weight: 600;">${p.derramas ? fmt(p.derramas) : '-'}</td>
       <td style="color: var(--text-muted);">${((p.insurance||0)+(p.ibi||0)) ? fmt((p.insurance||0)+(p.ibi||0)) : '-'}</td>
       <td style="color: var(--text-muted);">${p.otherExtra ? fmt(p.otherExtra) : '-'}</td>
-      <td style="color: #38bdf8; font-weight: 700;">${p.lauraExtraAmort ? fmt(p.lauraExtraAmort) : '-'}</td>
+      <td style="color: #38bdf8; font-weight: 700;">${p.lauraExtraAmort ? `<span style="background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.3); padding: 2px 6px; border-radius: 4px;">-${fmt(p.lauraExtraAmort)}</span>` : '-'}</td>
       <td style="color: #f43f5e; font-weight: 700;">${fmt(p.totalExpenses)}</td>
       <td style="font-weight: 700; color: ${gapColor};">${p.monthGap >= 0 ? '+' : ''}${fmt(p.monthGap)}</td>
       <td style="font-weight: 800; font-size: 13px; color: ${accColor}; background: ${p.accBalance >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 6px; padding: 6px 10px;">${p.accBalance >= 0 ? '+' : ''}${fmt(p.accBalance)}</td>
       <td style="color: var(--text-muted); font-size: 11px;">${fmt(p.totalFee)}</td>
-      <td style="color: var(--secondary); font-size: 11px;">${fmt((p.remaining || 0) * ((settings.coOwner1Percentage || 32.27)/100))}</td>
+      <td style="color: var(--secondary); font-size: 11px;">${fmt(p.remaining)}</td>
       <td style="text-align: center;">
         <button onclick="openEditModal(${p.id})" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;">Editar</button>
       </td>
@@ -759,16 +771,14 @@ function openRevisionModal(id = null) {
     document.getElementById('rev-name').value = "Revisión " + MONTH_LABELS[(new Date()).getMonth()] + " " + (new Date()).getFullYear();
     document.getElementById('rev-start-year').value = (new Date()).getFullYear();
     document.getElementById('rev-start-month').value = (new Date()).getMonth() + 1;
-    const latestP = payments[payments.length - 1];
-    const cap = latestP ? latestP.remaining : settings.initialCapital;
-    document.getElementById('rev-cap-total').value = cap.toFixed(2);
+    document.getElementById('rev-cap-total').value = (settings.initialCapital || 121766.32).toFixed(2);
+    document.getElementById('rev-cap-laura').value = ((settings.initialCapital || 121766.32) * ((settings.coOwner1Percentage || 32.27)/100)).toFixed(2);
     document.getElementById('rev-pct-laura').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
-    document.getElementById('rev-cap-laura').value = (cap * ((settings.coOwner1Percentage || 32.27) / 100)).toFixed(2);
-    document.getElementById('rev-fee-total').value = (latestP ? latestP.totalFee : 513.81).toFixed(2);
-    document.getElementById('rev-int-total').value = (latestP ? latestP.interest : 180.00).toFixed(2);
+    document.getElementById('rev-fee-total').value = "513.81";
+    document.getElementById('rev-int-total').value = "187.69";
   }
 
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
   document.getElementById('revision-modal').classList.add('active');
 }
 
@@ -778,52 +788,50 @@ function closeRevisionModal() {
 
 function onRevisionCapTotalChange() {
   const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const capL = Number(document.getElementById('rev-cap-laura').value) || 0;
-  if (capTot > 0 && capL > 0) {
-    const pct = (capL / capTot) * 100;
-    document.getElementById('rev-pct-laura').value = pct.toFixed(2);
+  const pctL = Number(document.getElementById('rev-pct-laura').value) || (settings.coOwner1Percentage || 32.27);
+  if (capTot > 0) {
+    document.getElementById('rev-cap-laura').value = (capTot * (pctL / 100)).toFixed(2);
   }
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
 }
 
 function onRevisionCapLauraChange() {
   const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
   const capL = Number(document.getElementById('rev-cap-laura').value) || 0;
-  if (capTot > 0) {
+  if (capTot > 0 && capL > 0) {
     const pct = (capL / capTot) * 100;
     document.getElementById('rev-pct-laura').value = pct.toFixed(2);
   }
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
 }
 
 function onRevisionPctLauraChange() {
   const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const pct = Number(document.getElementById('rev-pct-laura').value) || 0;
+  const pctL = Number(document.getElementById('rev-pct-laura').value) || 0;
   if (capTot > 0) {
-    const capL = capTot * (pct / 100);
-    document.getElementById('rev-cap-laura').value = capL.toFixed(2);
+    document.getElementById('rev-cap-laura').value = (capTot * (pctL / 100)).toFixed(2);
   }
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
 }
 
 function onRevisionFeeChange() {
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
 }
 
 function onRevisionInterestChange() {
-  updateLiveRevisionPreview();
+  updateRevisionCalculatedBox();
 }
 
-function updateLiveRevisionPreview() {
+function updateRevisionCalculatedBox() {
   const fee = Number(document.getElementById('rev-fee-total').value) || 0;
   const int = Number(document.getElementById('rev-int-total').value) || 0;
-  const prin = Math.max(0, fee - int);
-  const pct = Number(document.getElementById('rev-pct-laura').value) || (settings.coOwner1Percentage || 32.27);
+  const pctL = Number(document.getElementById('rev-pct-laura').value) || 32.27;
 
-  const lauraFee = fee * (pct / 100);
+  const lauraFee = fee * (pctL / 100);
   const rakFee = Math.max(0, fee - lauraFee);
-  const lauraInt = int * (pct / 100);
-  const lauraPrin = prin * (pct / 100);
+  const lauraInt = int * (pctL / 100);
+  const prin = Math.max(0, fee - int);
+  const lauraPrin = prin * (pctL / 100);
 
   if (document.getElementById('rev-prev-laura-fee')) document.getElementById('rev-prev-laura-fee').textContent = fmt(lauraFee);
   if (document.getElementById('rev-prev-rak-fee')) document.getElementById('rev-prev-rak-fee').textContent = fmt(rakFee);
@@ -834,7 +842,7 @@ function updateLiveRevisionPreview() {
 function submitRevisionHandler(e) {
   e.preventDefault();
   const editId = document.getElementById('rev-edit-id').value;
-  const name = document.getElementById('rev-name').value.trim();
+  const name = document.getElementById('rev-name').value || "Revisión";
   const y = Number(document.getElementById('rev-start-year').value);
   const m = Number(document.getElementById('rev-start-month').value);
   const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
@@ -1099,15 +1107,28 @@ function updateLiveModalSummary() {
   const lExtraAmort = Number(document.getElementById('p-laura-extra-amort')?.value) || 0;
   const dep = Number(document.getElementById('p-deposit')?.value) || 0;
 
-  const totalExp = co1 + com + luz + derr + ins + other + lExtraAmort;
+  // Operational expenses only
+  const totalExp = co1 + com + luz + derr + ins + other;
   const gap = dep - totalExp;
 
   const sumExpEl = document.getElementById('p-sum-expenses');
   const sumGapEl = document.getElementById('p-sum-gap');
+  const capBoxEl = document.getElementById('p-sum-capital-box');
+  const capValEl = document.getElementById('p-sum-capital');
+
   if (sumExpEl) sumExpEl.textContent = fmt(totalExp);
   if (sumGapEl) {
     sumGapEl.textContent = (gap >= 0 ? '+' : '') + fmt(gap);
     sumGapEl.style.color = gap >= 0 ? 'var(--primary)' : 'var(--red)';
+  }
+
+  if (capBoxEl && capValEl) {
+    if (lExtraAmort > 0) {
+      capBoxEl.style.display = 'block';
+      capValEl.textContent = fmt(lExtraAmort);
+    } else {
+      capBoxEl.style.display = 'none';
+    }
   }
 }
 
@@ -1149,7 +1170,8 @@ function submitPaymentHandler(e) {
     otherExtra: other,
     lauraExtraAmort: lExtraAmort,
     deposit: dep,
-    notes
+    notes,
+    remaining: 0
   };
 
   if (editId) {
@@ -1157,20 +1179,16 @@ function submitPaymentHandler(e) {
     if (idx !== -1) payments[idx] = paymentObj;
     showToast("Mes actualizado");
   } else {
+    // Check if month already exists
     const existingIdx = payments.findIndex(x => x.year === y && x.month === m);
     if (existingIdx !== -1) {
-      payments[existingIdx] = { ...paymentObj, id: payments[existingIdx].id };
-      showToast("Mes actualizado en histórico");
+      payments[existingIdx] = paymentObj;
+      showToast("Mes sobrescrito");
     } else {
       payments.push(paymentObj);
-      showToast("Mes guardado en histórico");
+      showToast("Mes añadido correctamente");
     }
   }
-
-  const filterYear = document.getElementById('filter-year-select');
-  if (filterYear) filterYear.value = 'ALL';
-  const filterSearch = document.getElementById('filter-search');
-  if (filterSearch) filterSearch.value = '';
 
   recomputeBalances();
   saveStateToStorage();
@@ -1188,74 +1206,76 @@ function deleteCurrentRow() {
     saveStateToStorage();
     closeModal();
     updateDashboardUI();
-    showToast("Registro mensual eliminado");
+    showToast("Mes eliminado");
   }
 }
 
 /* ==========================================================
-   SETTINGS & AGREEMENT WITH BIDIRECTIONAL DEBT / PERCENTAGE
+   SETTINGS & AGREEMENT FORM
    ========================================================== */
 function fillSettingsInputs() {
-  if (document.getElementById('cfg-capital-init')) document.getElementById('cfg-capital-init').value = settings.initialCapital || '';
-  if (document.getElementById('cfg-term-years')) document.getElementById('cfg-term-years').value = settings.totalTermYears || '';
-  if (document.getElementById('cfg-interest-rate')) document.getElementById('cfg-interest-rate').value = settings.annualInterestRate || '';
-  if (document.getElementById('cfg-laura-pct')) document.getElementById('cfg-laura-pct').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
-  if (document.getElementById('cfg-rak-pct')) document.getElementById('cfg-rak-pct').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
-  if (document.getElementById('cfg-laura-debt')) document.getElementById('cfg-laura-debt').value = settings.internalDebtLaura || '';
-  if (document.getElementById('cfg-rak-debt')) document.getElementById('cfg-rak-debt').value = settings.internalDebtRak || '';
-}
-
-function syncSettingsDebts() {
-  const d1 = Number(document.getElementById('cfg-laura-debt')?.value) || 0;
-  const d2 = Number(document.getElementById('cfg-rak-debt')?.value) || 0;
-  const tot = d1 + d2;
-  if (tot > 0) {
-    const p1 = (d1 / tot) * 100;
-    const p2 = (d2 / tot) * 100;
-    if (document.getElementById('cfg-laura-pct')) document.getElementById('cfg-laura-pct').value = p1.toFixed(2);
-    if (document.getElementById('cfg-rak-pct')) document.getElementById('cfg-rak-pct').value = p2.toFixed(2);
+  if (document.getElementById('cfg-capital-init')) {
+    document.getElementById('cfg-capital-init').value = (settings.initialCapital || 121766.32).toFixed(2);
+    document.getElementById('cfg-term-years').value = settings.totalTermYears || 25;
+    document.getElementById('cfg-interest-rate').value = (settings.annualInterestRate || 1.85).toFixed(2);
+    document.getElementById('cfg-laura-pct').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
+    document.getElementById('cfg-rak-pct').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
+    document.getElementById('cfg-debt-laura').value = (settings.internalDebtLaura || 33486).toFixed(2);
+    document.getElementById('cfg-debt-rak').value = (settings.internalDebtRak || 68266).toFixed(2);
+    document.getElementById('sync-user-id').value = currentSyncKey;
   }
 }
 
 function syncSettingsPercentages(source) {
   if (source === 'laura') {
-    const p1 = Number(document.getElementById('cfg-laura-pct')?.value) || 0;
-    if (document.getElementById('cfg-rak-pct')) document.getElementById('cfg-rak-pct').value = Math.max(0, 100 - p1).toFixed(2);
+    const lPct = Number(document.getElementById('cfg-laura-pct').value) || 0;
+    document.getElementById('cfg-rak-pct').value = (100 - lPct).toFixed(2);
   } else {
-    const p2 = Number(document.getElementById('cfg-rak-pct')?.value) || 0;
-    if (document.getElementById('cfg-laura-pct')) document.getElementById('cfg-laura-pct').value = Math.max(0, 100 - p2).toFixed(2);
+    const rPct = Number(document.getElementById('cfg-rak-pct').value) || 0;
+    document.getElementById('cfg-laura-pct').value = (100 - rPct).toFixed(2);
   }
 }
 
-function saveSettingsHandler(e) {
-  e.preventDefault();
-  const cap = document.getElementById('cfg-capital-init')?.value.trim();
-  const term = document.getElementById('cfg-term-years')?.value.trim();
-  const rate = document.getElementById('cfg-interest-rate')?.value.trim();
-  const lPct = document.getElementById('cfg-laura-pct')?.value.trim();
-  const rPct = document.getElementById('cfg-rak-pct')?.value.trim();
-  const lDebt = document.getElementById('cfg-laura-debt')?.value.trim();
-  const rDebt = document.getElementById('cfg-rak-debt')?.value.trim();
+function syncSettingsDebts() {
+  const dL = Number(document.getElementById('cfg-debt-laura').value) || 0;
+  const dR = Number(document.getElementById('cfg-debt-rak').value) || 0;
+  const tot = dL + dR;
+  if (tot > 0) {
+    const lPct = (dL / tot) * 100;
+    document.getElementById('cfg-laura-pct').value = lPct.toFixed(2);
+    document.getElementById('cfg-rak-pct').value = (100 - lPct).toFixed(2);
+  }
+}
 
-  if (cap !== "") settings.initialCapital = Number(cap) || settings.initialCapital;
-  if (term !== "") settings.totalTermYears = Number(term) || settings.totalTermYears;
-  if (rate !== "") settings.annualInterestRate = Number(rate) || settings.annualInterestRate;
-  if (lPct !== "") settings.coOwner1Percentage = Number(lPct) || 32.27;
-  if (rPct !== "") settings.coOwner2Percentage = Number(rPct) || (100 - settings.coOwner1Percentage);
-  settings.internalDebtLaura = lDebt !== "" ? (Number(lDebt) || 0) : 0;
-  settings.internalDebtRak = rDebt !== "" ? (Number(rDebt) || 0) : 0;
+function syncAgreementPercentages(source) {
+  if (source === 'laura') {
+    const lPct = Number(document.getElementById('agree-pct-laura').value) || 0;
+    document.getElementById('agree-pct-rak').value = (100 - lPct).toFixed(2);
+  } else {
+    const rPct = Number(document.getElementById('agree-pct-rak').value) || 0;
+    document.getElementById('agree-pct-laura').value = (100 - rPct).toFixed(2);
+  }
+}
 
-  saveStateToStorage();
-  recomputeBalances();
-  updateDashboardUI();
-  showToast("Ajustes guardados");
+function syncAgreementDebts() {
+  const dL = Number(document.getElementById('agree-debt-laura').value) || 0;
+  const dR = Number(document.getElementById('agree-debt-rak').value) || 0;
+  const tot = dL + dR;
+  if (tot > 0) {
+    const lPct = (dL / tot) * 100;
+    document.getElementById('agree-pct-laura').value = lPct.toFixed(2);
+    document.getElementById('agree-pct-rak').value = (100 - lPct).toFixed(2);
+  }
 }
 
 function openAgreementModal() {
+  document.getElementById('agree-name-laura').value = settings.coOwner1Name || "Laura";
+  document.getElementById('agree-name-rak').value = settings.coOwner2Name || "Rak";
   document.getElementById('agree-pct-laura').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
   document.getElementById('agree-pct-rak').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
-  document.getElementById('agree-debt-laura').value = settings.internalDebtLaura || '';
-  document.getElementById('agree-debt-rak').value = settings.internalDebtRak || '';
+  document.getElementById('agree-debt-laura').value = (settings.internalDebtLaura || 33486).toFixed(2);
+  document.getElementById('agree-debt-rak').value = (settings.internalDebtRak || 68266).toFixed(2);
+
   document.getElementById('agreement-modal').classList.add('active');
 }
 
@@ -1263,276 +1283,209 @@ function closeAgreementModal() {
   document.getElementById('agreement-modal').classList.remove('active');
 }
 
-function syncAgreementDebts() {
-  const d1 = Number(document.getElementById('agree-debt-laura').value) || 0;
-  const d2 = Number(document.getElementById('agree-debt-rak').value) || 0;
-  const tot = d1 + d2;
-  if (tot > 0) {
-    const p1 = (d1 / tot) * 100;
-    const p2 = (d2 / tot) * 100;
-    document.getElementById('agree-pct-laura').value = p1.toFixed(2);
-    document.getElementById('agree-pct-rak').value = p2.toFixed(2);
-  }
-}
-
-function syncAgreementPercentages(source) {
-  if (source === 'laura') {
-    const p1 = Number(document.getElementById('agree-pct-laura').value) || 0;
-    document.getElementById('agree-pct-rak').value = Math.max(0, (100 - p1)).toFixed(2);
-  } else {
-    const p2 = Number(document.getElementById('agree-pct-rak').value) || 0;
-    document.getElementById('agree-pct-laura').value = Math.max(0, (100 - p2)).toFixed(2);
-  }
-}
-
 function submitAgreementHandler(e) {
   e.preventDefault();
-  const valLaura = document.getElementById('agree-pct-laura').value.trim();
-  const valRak = document.getElementById('agree-pct-rak').value.trim();
-  const valDebtL = document.getElementById('agree-debt-laura').value.trim();
-  const valDebtR = document.getElementById('agree-debt-rak').value.trim();
-
-  let p1 = valLaura !== "" ? Number(valLaura) : (settings.coOwner1Percentage || 32.27);
-  let p2 = valRak !== "" ? Number(valRak) : (100 - p1);
-
-  settings.coOwner1Percentage = p1;
-  settings.coOwner2Percentage = p2;
-  settings.internalDebtLaura = valDebtL !== "" ? (Number(valDebtL) || 0) : 0;
-  settings.internalDebtRak = valDebtR !== "" ? (Number(valDebtR) || 0) : 0;
+  settings.coOwner1Name = document.getElementById('agree-name-laura').value || "Laura";
+  settings.coOwner2Name = document.getElementById('agree-name-rak').value || "Rak";
+  settings.coOwner1Percentage = Number(document.getElementById('agree-pct-laura').value) || 32.27;
+  settings.coOwner2Percentage = Number(document.getElementById('agree-pct-rak').value) || 67.73;
+  settings.internalDebtLaura = Number(document.getElementById('agree-debt-laura').value) || 0;
+  settings.internalDebtRak = Number(document.getElementById('agree-debt-rak').value) || 0;
 
   saveStateToStorage();
-  recomputeBalances();
-  updateDashboardUI();
   closeAgreementModal();
+  updateDashboardUI();
   showToast("Acuerdo actualizado");
 }
 
+function saveSettingsHandler(e) {
+  e.preventDefault();
+  settings.initialCapital = Number(document.getElementById('cfg-capital-init').value) || 121766.32;
+  settings.totalTermYears = Number(document.getElementById('cfg-term-years').value) || 25;
+  settings.annualInterestRate = Number(document.getElementById('cfg-interest-rate').value) || 1.85;
+  settings.coOwner1Percentage = Number(document.getElementById('cfg-laura-pct').value) || 32.27;
+  settings.coOwner2Percentage = Number(document.getElementById('cfg-rak-pct').value) || 67.73;
+  settings.internalDebtLaura = Number(document.getElementById('cfg-debt-laura').value) || 0;
+  settings.internalDebtRak = Number(document.getElementById('cfg-debt-rak').value) || 0;
+
+  const newKey = document.getElementById('sync-user-id').value;
+  if (newKey && newKey !== currentSyncKey) {
+    setSyncKey(newKey);
+  }
+
+  recomputeBalances();
+  saveStateToStorage();
+  updateDashboardUI();
+  showToast("Ajustes guardados");
+}
+
+function handleFilterChange() {
+  renderHistoryTable();
+}
+
+function filterByYearPill(pillVal, btnElem) {
+  document.querySelectorAll('.year-pill').forEach(el => el.classList.remove('active'));
+  if (btnElem) btnElem.classList.add('active');
+
+  const select = document.getElementById('filter-year-select');
+  if (select) {
+    select.value = pillVal;
+    renderHistoryTable();
+  }
+}
+
 /* ==========================================================
-   EXPORT, IMPORT & DATA MANAGEMENT
+   EXPORT & BACKUP
    ========================================================== */
 function exportDataJSON() {
-  const blob = new Blob([JSON.stringify({ settings, revisions, payments }, null, 2)], { type: 'application/json' });
-  triggerDownload(blob, `hipoteca_conjunta_backup_${Date.now()}.json`);
-  showToast("JSON exportado");
-}
-
-function exportDataCSV() {
-  let csv = "Año,Mes,Cuota Banco,Laura,Rak,Intereses,Capital,Comunidad,Luz,Derramas,Seguro_IBI,Otros,Desc_Laura_Rak,Ingreso Laura,Desfase Mes,Desfase Acumulado,Pendiente\n";
-  payments.forEach(p => {
-    csv += `${p.year},${MONTH_LABELS[p.month-1]},${p.totalFee},${p.co1},${p.co2},${p.interest||0},${p.principal||0},${p.community||0},${p.electricity||0},${p.derramas||0},${(p.insurance||0)+(p.ibi||0)},${p.otherExtra||0},${p.lauraExtraAmort||0},${p.deposit||0},${p.monthGap||0},${p.accBalance||0},${p.remaining||0}\n`;
-  });
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  triggerDownload(blob, `hipoteca_conjunta_historico_${Date.now()}.csv`);
-  showToast("CSV exportado");
-}
-
-function triggerDownload(blob, name) {
+  const data = {
+    settings,
+    revisions,
+    payments,
+    exportDate: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = name;
+  a.download = `hipoteca_laura_rak_${new Date().toISOString().substring(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  showToast("Copia descargada");
 }
 
 function importDataJSON(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
+  reader.onload = (event) => {
     try {
-      const res = JSON.parse(ev.target.result);
-      if (res.payments && Array.isArray(res.payments)) {
-        payments = res.payments;
-        if (res.settings) settings = { ...settings, ...res.settings };
-        if (res.revisions && Array.isArray(res.revisions)) revisions = res.revisions;
-        recomputeBalances();
-        saveStateToStorage();
-        updateDashboardUI();
-        showToast("Datos importados exitosamente");
-      }
+      const data = JSON.parse(event.target.result);
+      if (data.settings) settings = data.settings;
+      if (data.revisions) revisions = data.revisions;
+      if (data.payments) payments = data.payments;
+      recomputeBalances();
+      saveStateToStorage();
+      updateDashboardUI();
+      showToast("Datos importados con éxito");
     } catch (err) {
-      showToast("Error al importar archivo");
+      alert("Error al leer el archivo JSON.");
     }
   };
   reader.readAsText(file);
 }
 
-function clearAllData() {
-  if (confirm("¿Borrar todos los pagos y empezar desde cero?")) {
-    payments = [];
-    recomputeBalances();
-    saveStateToStorage();
-    updateDashboardUI();
-    showToast("Histórico vaciado");
-  }
-}
-
-function resetToExcelOriginal() {
-  if (confirm("¿Restablecer datos originales del Excel?")) {
-    settings.initialCapital = 121766.32;
-    settings.internalDebtLaura = 71500.0;
-    settings.internalDebtRak = 53500.0;
-    settings.coOwner1Percentage = 32.27;
-    settings.coOwner2Percentage = 67.73;
+function resetAllData() {
+  if (confirm("¿Estás seguro de restablecer todos los datos iniciales?")) {
     payments = getOriginalExcelSeed();
     recomputeBalances();
     saveStateToStorage();
     updateDashboardUI();
-    showToast("Datos de Excel restaurados");
+    showToast("Datos restablecidos");
   }
 }
 
 /* ==========================================================
-   FIRESTORE MULTI-DEVICE SYNC ENGINE
+   FIRESTORE CLOUD REALTIME SYNC
    ========================================================== */
 function updateSyncUI() {
-  const isBase = currentSyncKey === DEFAULT_SYNC_KEY;
-  
-  const pillLabel = document.getElementById('sync-pill-label');
-  const pillDot = document.getElementById('sync-pill-dot');
-  if (pillLabel) pillLabel.textContent = isBase ? 'Conectar cuenta' : currentSyncKey;
-  if (pillDot) pillDot.style.background = isBase ? '#f59e0b' : '#10b981';
+  const label = document.getElementById('sync-status-text');
+  const badge = document.getElementById('header-sync-badge');
+  const topText = document.getElementById('header-sync-text');
 
-  const bannerText = document.getElementById('banner-sync-text');
-  const bannerDot = document.getElementById('banner-sync-dot');
-  if (bannerText) {
-    bannerText.textContent = isBase ? "Sincronización activa (sistema base)" : `Sincronización activa (${currentSyncKey})`;
-  }
-  if (bannerDot) bannerDot.style.background = isBase ? '#f59e0b' : '#10b981';
+  if (label) label.textContent = currentSyncKey;
+  if (topText) topText.textContent = currentSyncKey;
+  if (badge) badge.style.display = 'inline-flex';
+}
 
-  const modalBadge = document.getElementById('sync-status-badge');
-  const activeLabel = document.getElementById('sync-active-label');
-  const inputKey = document.getElementById('sync-input-key');
-  if (modalBadge) {
-    modalBadge.textContent = isBase ? 'Sistema base' : 'Conectado';
-    modalBadge.style.background = isBase ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)';
-    modalBadge.style.color = isBase ? '#fcd34d' : '#84cc16';
-  }
-  if (activeLabel) activeLabel.textContent = currentSyncKey;
-  if (inputKey && !inputKey.value) inputKey.value = isBase ? '' : currentSyncKey;
-
-  const settingsBadge = document.getElementById('settings-sync-badge');
-  if (settingsBadge) {
-    settingsBadge.textContent = isBase ? 'Sistema base' : 'Conectado';
-    settingsBadge.style.color = isBase ? '#fcd34d' : 'var(--primary)';
+function promptChangeSyncKey() {
+  const nextKey = prompt("Introduce tu cuenta o clave de sincronización en la nube:", currentSyncKey);
+  if (nextKey && nextKey.trim().length > 0) {
+    setSyncKey(nextKey);
+    showToast("Cuenta de sincronización cambiada");
   }
 }
+
+let isSyncingIncoming = false;
 
 function connectFirestoreSync(key) {
   if (!window.firebaseSync || !window.firebaseSync.db) return;
-  const sync = window.firebaseSync;
-  const cleanKey = sanitizeSyncKey(key);
+  const db = window.firebaseSync.db;
 
   if (firestoreUnsubscribe) {
-    try { firestoreUnsubscribe(); } catch(e) {}
-    firestoreUnsubscribe = null;
+    try { firestoreUnsubscribe(); } catch (e) {}
   }
 
-  try {
-    const docRef = sync.doc(sync.db, "shared_mortgages", cleanKey);
-    firestoreUnsubscribe = sync.onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        let changed = false;
-        if (data.settings && JSON.stringify(data.settings) !== JSON.stringify(settings)) {
-          settings = { ...settings, ...data.settings };
-          changed = true;
-        }
-        if (data.revisions && JSON.stringify(data.revisions) !== JSON.stringify(revisions)) {
-          revisions = data.revisions;
-          changed = true;
-        }
-        if (data.payments && Array.isArray(data.payments)) {
-          payments = data.payments;
-          changed = true;
-        }
-        if (changed) {
+  const docRef = db.collection('mortgage_accounts').doc(key);
+
+  firestoreUnsubscribe = docRef.onSnapshot(doc => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data && data.updatedAt) {
+        const localTime = Number(localStorage.getItem('hipoteca_last_sync_time') || 0);
+        if (data.updatedAt > localTime) {
+          isSyncingIncoming = true;
+          if (data.settings) settings = { ...settings, ...data.settings };
+          if (Array.isArray(data.revisions)) revisions = data.revisions;
+          if (Array.isArray(data.payments)) payments = data.payments;
+          
+          localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
           try {
-            localStorage.setItem('hipoteca_cfg_v6', JSON.stringify(settings));
-            localStorage.setItem('hipoteca_revs_v6', JSON.stringify(revisions));
-            localStorage.setItem('hipoteca_payments_v6', JSON.stringify(payments));
+            localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
+            localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
+            localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
           } catch(e) {}
+
           recomputeBalances();
           updateDashboardUI();
-          showToast("Datos sincronizados en tiempo real ☁️");
+          isSyncingIncoming = false;
         }
-      } else {
-        syncToFirestoreIfAvailable(true);
       }
-    }, (err) => {
-      console.warn("Firestore sync warning:", err);
-    });
-  } catch (err) {
-    console.warn("Error attaching Firestore listener:", err);
-  }
+    } else {
+      syncToFirestoreIfAvailable(true);
+    }
+  }, err => {
+    console.warn("Firestore sync warning:", err);
+  });
 }
 
-function syncToFirestoreIfAvailable(silent = false) {
+function syncToFirestoreIfAvailable(force = false) {
+  if (isSyncingIncoming) return;
   if (!window.firebaseSync || !window.firebaseSync.db) return;
-  const sync = window.firebaseSync;
-  const cleanKey = getSyncKey();
 
-  try {
-    const docRef = sync.doc(sync.db, "shared_mortgages", cleanKey);
-    sync.setDoc(docRef, {
-      settings: settings,
-      revisions: revisions,
-      payments: payments,
-      updatedAt: Date.now()
-    }, { merge: true }).then(() => {
-      if (!silent) showToast("Sincronizado en la nube ☁️");
-    }).catch(err => {
-      console.warn("Error guardando en Firestore:", err);
-    });
-  } catch (err) {
-    console.warn("Sync error:", err);
-  }
-}
+  const db = window.firebaseSync.db;
+  const key = currentSyncKey || DEFAULT_SYNC_KEY;
+  const now = Date.now();
+  localStorage.setItem('hipoteca_last_sync_time', now.toString());
 
-function openSyncModal() {
-  const input = document.getElementById('sync-input-key');
-  if (input) {
-    input.value = currentSyncKey === DEFAULT_SYNC_KEY ? '' : currentSyncKey;
-  }
-  updateSyncUI();
-  document.getElementById('sync-modal').classList.add('active');
-}
-
-function closeSyncModal() {
-  document.getElementById('sync-modal').classList.remove('active');
-}
-
-function handleSyncConnect(e) {
-  e.preventDefault();
-  const input = document.getElementById('sync-input-key');
-  const val = (input?.value || '').trim();
-  if (!val) {
-    alert("Introduce un correo electrónico o código identificador.");
-    return;
-  }
-  setSyncKey(val);
-  closeSyncModal();
-  showToast("Conectado: " + val + " ☁️");
-}
-
-function forceCloudSave() {
-  syncToFirestoreIfAvailable(false);
-  showToast("Guardado forzado ☁️");
+  db.collection('mortgage_accounts').doc(key).set({
+    settings,
+    revisions,
+    payments,
+    updatedAt: now
+  }, { merge: true }).catch(err => {
+    console.warn("Firestore save error:", err);
+  });
 }
 
 function showToast(msg) {
-  const t = document.getElementById('toast-banner');
-  const textEl = document.getElementById('toast-text');
-  if (textEl) textEl.textContent = msg;
-  if (t) {
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2600);
-  }
+  const toast = document.createElement('div');
+  toast.textContent = msg;
+  toast.style.position = 'fixed';
+  toast.style.bottom = '90px';
+  toast.style.left = '50%';
+  toast.style.transform = 'translateX(-50%)';
+  toast.style.background = '#062014';
+  toast.style.color = '#10b981';
+  toast.style.border = '1px solid #10b981';
+  toast.style.padding = '10px 18px';
+  toast.style.borderRadius = '9999px';
+  toast.style.fontSize = '12px';
+  toast.style.fontWeight = '700';
+  toast.style.zIndex = '9999';
+  toast.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.remove();
+  }, 2400);
 }
-
-window.addEventListener('resize', () => {
-  if (document.getElementById('tab-content-dashboard')?.style.display !== 'none') {
-    drawFinancialCharts();
-  }
-});
