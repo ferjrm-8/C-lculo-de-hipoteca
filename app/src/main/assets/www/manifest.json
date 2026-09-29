@@ -1,0 +1,21 @@
+{
+  "name": "Hipoteca Conjunta",
+  "short_name": "Hipoteca",
+  "description": "Cálculo, amortizaciones y gastos de hipoteca en conjunto entre copropietarios",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0b131e",
+  "theme_color": "#0b131e",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

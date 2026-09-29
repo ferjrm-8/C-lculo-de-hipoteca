@@ -1,0 +1,6 @@
+{
+  "name": "Hipoteca Conjunta",
+  "description": "Cálculo, seguimiento, amortizaciones y sincronización compartida de hipoteca entre copropietarios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
