@@ -1386,86 +1386,130 @@ function resetAllData() {
 }
 
 /* ==========================================================
-   FIRESTORE CLOUD REALTIME SYNC
+   FIRESTORE CLOUD REALTIME SYNC & MODAL HANDLERS
    ========================================================== */
-function updateSyncUI() {
-  const label = document.getElementById('sync-status-text');
-  const badge = document.getElementById('header-sync-badge');
-  const topText = document.getElementById('header-sync-text');
+function openSyncModal() {
+  const inputEl = document.getElementById('sync-input-key');
+  if (inputEl) inputEl.value = currentSyncKey;
+  
+  const activeLabel = document.getElementById('sync-active-label');
+  if (activeLabel) activeLabel.textContent = currentSyncKey;
 
-  if (label) label.textContent = currentSyncKey;
-  if (topText) topText.textContent = currentSyncKey;
-  if (badge) badge.style.display = 'inline-flex';
+  const modal = document.getElementById('sync-modal');
+  if (modal) modal.classList.add('active');
+}
+
+function closeSyncModal() {
+  const modal = document.getElementById('sync-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function handleSyncConnect(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const inputEl = document.getElementById('sync-input-key');
+  const key = inputEl ? inputEl.value.trim() : '';
+  if (key) {
+    setSyncKey(key);
+    closeSyncModal();
+    showToast("Conectado a: " + key);
+  }
+}
+
+function updateSyncUI() {
+  const pillLabel = document.getElementById('sync-pill-label');
+  if (pillLabel) pillLabel.textContent = currentSyncKey;
+
+  const bannerText = document.getElementById('banner-sync-text');
+  if (bannerText) bannerText.textContent = `Sincronización activa (${currentSyncKey})`;
+
+  const activeLabel = document.getElementById('sync-active-label');
+  if (activeLabel) activeLabel.textContent = currentSyncKey;
+
+  const badge = document.getElementById('sync-status-badge');
+  if (badge) {
+    const isCustom = currentSyncKey !== DEFAULT_SYNC_KEY;
+    badge.textContent = isCustom ? "Conectado" : "Sistema base";
+    badge.style.color = isCustom ? "#10b981" : "#fcd34d";
+    badge.style.background = isCustom ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)";
+  }
+
+  const syncUserId = document.getElementById('sync-user-id');
+  if (syncUserId) syncUserId.value = currentSyncKey;
 }
 
 function promptChangeSyncKey() {
-  const nextKey = prompt("Introduce tu cuenta o clave de sincronización en la nube:", currentSyncKey);
-  if (nextKey && nextKey.trim().length > 0) {
-    setSyncKey(nextKey);
-    showToast("Cuenta de sincronización cambiada");
-  }
+  openSyncModal();
 }
 
 let isSyncingIncoming = false;
 
 function connectFirestoreSync(key) {
   if (!window.firebaseSync || !window.firebaseSync.db) return;
-  const db = window.firebaseSync.db;
+  const { db, doc, onSnapshot } = window.firebaseSync;
 
   if (firestoreUnsubscribe) {
     try { firestoreUnsubscribe(); } catch (e) {}
   }
 
-  const docRef = db.collection('mortgage_accounts').doc(key);
+  try {
+    const docRef = doc(db, 'mortgage_accounts', key);
 
-  firestoreUnsubscribe = docRef.onSnapshot(doc => {
-    if (doc.exists) {
-      const data = doc.data();
-      if (data && data.updatedAt) {
-        const localTime = Number(localStorage.getItem('hipoteca_last_sync_time') || 0);
-        if (data.updatedAt > localTime) {
-          isSyncingIncoming = true;
-          if (data.settings) settings = { ...settings, ...data.settings };
-          if (Array.isArray(data.revisions)) revisions = data.revisions;
-          if (Array.isArray(data.payments)) payments = data.payments;
-          
-          localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
-          try {
-            localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
-            localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
-            localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
-          } catch(e) {}
+    firestoreUnsubscribe = onSnapshot(docRef, docSnap => {
+      if (docSnap && docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.updatedAt) {
+          const localTime = Number(localStorage.getItem('hipoteca_last_sync_time') || 0);
+          if (data.updatedAt > localTime) {
+            isSyncingIncoming = true;
+            if (data.settings) settings = { ...settings, ...data.settings };
+            if (Array.isArray(data.revisions) && data.revisions.length > 0) revisions = data.revisions;
+            if (Array.isArray(data.payments)) payments = data.payments;
+            
+            localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
+            try {
+              localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
+              localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
+              localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
+            } catch(e) {}
 
-          recomputeBalances();
-          updateDashboardUI();
-          isSyncingIncoming = false;
+            recomputeBalances();
+            updateDashboardUI();
+            isSyncingIncoming = false;
+          }
         }
+      } else {
+        syncToFirestoreIfAvailable(true);
       }
-    } else {
-      syncToFirestoreIfAvailable(true);
-    }
-  }, err => {
-    console.warn("Firestore sync warning:", err);
-  });
+    }, err => {
+      console.warn("Firestore sync listener notice:", err);
+    });
+  } catch (err) {
+    console.warn("Firestore connection notice:", err);
+  }
 }
 
 function syncToFirestoreIfAvailable(force = false) {
   if (isSyncingIncoming) return;
   if (!window.firebaseSync || !window.firebaseSync.db) return;
 
-  const db = window.firebaseSync.db;
+  const { db, doc, setDoc } = window.firebaseSync;
   const key = currentSyncKey || DEFAULT_SYNC_KEY;
   const now = Date.now();
   localStorage.setItem('hipoteca_last_sync_time', now.toString());
 
-  db.collection('mortgage_accounts').doc(key).set({
-    settings,
-    revisions,
-    payments,
-    updatedAt: now
-  }, { merge: true }).catch(err => {
-    console.warn("Firestore save error:", err);
-  });
+  try {
+    const docRef = doc(db, 'mortgage_accounts', key);
+    setDoc(docRef, {
+      settings,
+      revisions,
+      payments,
+      updatedAt: now
+    }, { merge: true }).catch(err => {
+      console.warn("Firestore save notice:", err);
+    });
+  } catch (err) {
+    console.warn("Firestore setDoc notice:", err);
+  }
 }
 
 function showToast(msg) {
