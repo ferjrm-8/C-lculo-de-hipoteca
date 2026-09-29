@@ -955,6 +955,23 @@
     <!-- TAB 1: CUADRO DE MANDO (DASHBOARD)             -->
     <!-- ============================================== -->
     <div id="tab-content-dashboard">
+
+      <!-- Banner de inicio limpio cuando no hay meses registrados -->
+      <div id="empty-state-banner" style="display: none; background: rgba(59, 130, 246, 0.08); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 20px; text-align: center;">
+        <div style="font-weight: 800; font-size: 16px; color: #fff; margin-bottom: 6px;">Histórico vacío / Listo para tus propios datos</div>
+        <div style="font-size: 13px; color: var(--text-muted); max-width: 580px; margin: 0 auto 16px;">
+          Actualmente no hay ninguna mensualidad guardada. Pulsa el botón verde para registrar el primer mes de Laura (ingreso, hipoteca y gastos del piso) o restablece los datos originales si lo deseas.
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button onclick="openModal()" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Registrar Primer Mes de Laura
+          </button>
+          <button onclick="resetToExcelOriginal()" class="btn btn-secondary btn-sm" style="color: var(--text-muted);">
+            Cargar Datos Ejemplo Excel
+          </button>
+        </div>
+      </div>
       
       <!-- Primary KPI Grid: Centrado en los Pagos y Desfase de Laura -->
       <div class="kpi-container">
@@ -1676,85 +1693,97 @@
     }
 
     function updateDashboardUI() {
-      const latest = payments[payments.length - 1];
+      const hasPayments = payments && payments.length > 0;
+      const latest = hasPayments ? payments[payments.length - 1] : null;
+
+      const emptyBanner = document.getElementById('empty-state-banner');
+      if (emptyBanner) {
+        emptyBanner.style.display = hasPayments ? 'none' : 'block';
+      }
+
       const remaining = latest ? latest.remaining : settings.initialCapital;
       const amortized = Math.max(0, settings.initialCapital - remaining);
-      const pct = (amortized / settings.initialCapital) * 100;
+      const pct = hasPayments ? (amortized / settings.initialCapital) * 100 : 0;
 
-      const fee = latest ? latest.totalFee : 513.81;
-      const lauraFee = latest ? latest.co1 : (fee * (settings.coOwner1Percentage / 100));
-      const rakFee = latest ? latest.co2 : (fee - lauraFee);
+      const fee = latest ? latest.totalFee : 0;
+      const pctLaura = settings.coOwner1Percentage || 32.27;
+      const pctRak = settings.coOwner2Percentage || 67.73;
+      const lauraFee = latest ? latest.co1 : 0;
+      const rakFee = latest ? latest.co2 : 0;
 
-      document.getElementById('kpi-remaining').textContent = fmt(remaining);
+      document.getElementById('kpi-remaining').textContent = hasPayments ? fmt(remaining) : fmt(settings.initialCapital);
       document.getElementById('kpi-amort-pct').textContent = pct.toFixed(1) + '%';
       document.getElementById('kpi-progress-bar').style.width = Math.min(100, pct) + '%';
 
-      document.getElementById('kpi-total-fee').textContent = fmt(fee);
-      document.getElementById('kpi-fee-laura').textContent = fmt(lauraFee);
-      document.getElementById('kpi-fee-rak').textContent = fmt(rakFee);
+      document.getElementById('kpi-total-fee').textContent = hasPayments ? fmt(fee) : "0,00 €";
+      document.getElementById('kpi-fee-laura').textContent = hasPayments ? fmt(lauraFee) : "0,00 €";
+      document.getElementById('kpi-fee-rak').textContent = hasPayments ? fmt(rakFee) : "0,00 €";
 
       // Laura Desfase KPIs
-      const accBal = latest ? latest.accBalance : 26.15;
+      const accBal = latest ? latest.accBalance : 0;
       const mGap = latest ? (latest.monthGap || 0) : 0;
       const accElem = document.getElementById('kpi-acc-balance');
       accElem.textContent = (accBal >= 0 ? '+' : '') + fmt(accBal);
-      accElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+      accElem.style.color = !hasPayments ? 'var(--text-muted)' : (accBal >= 0 ? 'var(--primary)' : 'var(--red)');
 
       const mGapElem = document.getElementById('kpi-month-gap');
       if (mGapElem) {
-        mGapElem.textContent = (mGap >= 0 ? '+' : '') + fmt(mGap);
-        mGapElem.style.color = mGap >= 0 ? 'var(--primary)' : 'var(--red)';
+        mGapElem.textContent = hasPayments ? ((mGap >= 0 ? '+' : '') + fmt(mGap)) : "0,00 €";
+        mGapElem.style.color = !hasPayments ? 'var(--text-muted)' : (mGap >= 0 ? 'var(--primary)' : 'var(--red)');
       }
 
       const statusElem = document.getElementById('kpi-balance-status');
       if (statusElem) {
-        statusElem.textContent = accBal >= 0 
-          ? "Saldo acumulado a favor de Laura (+)" 
-          : "Laura tiene saldo pendiente de regularizar (-)";
-        statusElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+        if (!hasPayments) {
+          statusElem.textContent = "Sin meses registrados todavía";
+          statusElem.style.color = "var(--text-muted)";
+        } else {
+          statusElem.textContent = accBal >= 0 
+            ? "Saldo acumulado a favor de Laura (+)" 
+            : "Laura tiene saldo pendiente de regularizar (-)";
+          statusElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+        }
       }
 
       if (document.getElementById('kpi-laura-total-expenses')) {
-        document.getElementById('kpi-laura-total-expenses').textContent = fmt(latest ? latest.totalExpenses : 281.81);
-        document.getElementById('kpi-laura-deposit').textContent = fmt(latest ? latest.deposit : 500);
-        document.getElementById('kpi-exp-hip').textContent = fmt(lauraFee);
-        document.getElementById('kpi-exp-com').textContent = fmt(latest ? latest.community : 81);
-        document.getElementById('kpi-exp-luz').textContent = fmt(latest ? latest.electricity : 35);
+        document.getElementById('kpi-laura-total-expenses').textContent = hasPayments ? fmt(latest.totalExpenses) : "0,00 €";
+        document.getElementById('kpi-laura-deposit').textContent = hasPayments ? fmt(latest.deposit) : "0,00 €";
+        document.getElementById('kpi-exp-hip').textContent = hasPayments ? fmt(lauraFee) : "0,00 €";
+        document.getElementById('kpi-exp-com').textContent = hasPayments ? fmt(latest.community) : "0,00 €";
+        document.getElementById('kpi-exp-luz').textContent = hasPayments ? fmt(latest.electricity) : "0,00 €";
       }
 
-      const pctLaura = settings.coOwner1Percentage;
-      const pctRak = settings.coOwner2Percentage;
       if (document.getElementById('kpi-laura-remaining')) {
-        document.getElementById('kpi-laura-remaining').textContent = fmt(remaining * (pctLaura / 100));
+        document.getElementById('kpi-laura-remaining').textContent = hasPayments ? fmt(remaining * (pctLaura / 100)) : fmt(settings.initialCapital * (pctLaura / 100));
       }
 
       // Co-owners agreement dynamic percentages
       if (document.getElementById('laura-pct-label')) {
         document.getElementById('laura-pct-label').textContent = pctLaura.toFixed(2).replace('.', ',') + '%';
         document.getElementById('rak-pct-label').textContent = pctRak.toFixed(2).replace('.', ',') + '%';
-        document.getElementById('laura-share-fee-label').textContent = fmt(lauraFee);
-        document.getElementById('rak-share-fee-label').textContent = fmt(rakFee);
+        document.getElementById('laura-share-fee-label').textContent = hasPayments ? fmt(lauraFee) : "0,00 €";
+        document.getElementById('rak-share-fee-label').textContent = hasPayments ? fmt(rakFee) : "0,00 €";
         document.getElementById('split-track-laura').style.width = pctLaura + '%';
         document.getElementById('split-track-rak').style.width = pctRak + '%';
       }
 
       // 3 Revision boxes
       if (document.getElementById('rev1-full-fee')) {
-        document.getElementById('rev1-full-fee').textContent = fmt(fee);
-        document.getElementById('rev1-laura-fee').textContent = fmt(fee * (pctLaura / 100));
-        document.getElementById('rev1-rak-fee').textContent = fmt(fee - (fee * (pctLaura / 100)));
+        document.getElementById('rev1-full-fee').textContent = hasPayments ? fmt(fee) : "0,00 €";
+        document.getElementById('rev1-laura-fee').textContent = hasPayments ? fmt(fee * (pctLaura / 100)) : "0,00 €";
+        document.getElementById('rev1-rak-fee').textContent = hasPayments ? fmt(fee - (fee * (pctLaura / 100))) : "0,00 €";
 
-        document.getElementById('rev2-full-fee').textContent = fmt(fee);
-        document.getElementById('rev2-laura-fee').textContent = fmt(fee * (pctLaura / 100));
-        document.getElementById('rev2-rak-fee').textContent = fmt(fee - (fee * (pctLaura / 100)));
+        document.getElementById('rev2-full-fee').textContent = hasPayments ? fmt(fee) : "0,00 €";
+        document.getElementById('rev2-laura-fee').textContent = hasPayments ? fmt(fee * (pctLaura / 100)) : "0,00 €";
+        document.getElementById('rev2-rak-fee').textContent = hasPayments ? fmt(fee - (fee * (pctLaura / 100))) : "0,00 €";
 
-        document.getElementById('rev3-full-fee').textContent = fmt(fee);
-        document.getElementById('rev3-laura-fee').textContent = fmt(fee * (pctLaura / 100));
-        document.getElementById('rev3-rak-fee').textContent = fmt(fee - (fee * (pctLaura / 100)));
+        document.getElementById('rev3-full-fee').textContent = hasPayments ? fmt(fee) : "0,00 €";
+        document.getElementById('rev3-laura-fee').textContent = hasPayments ? fmt(fee * (pctLaura / 100)) : "0,00 €";
+        document.getElementById('rev3-rak-fee').textContent = hasPayments ? fmt(fee - (fee * (pctLaura / 100))) : "0,00 €";
       }
 
-      const totInt = payments.reduce((acc, p) => acc + (Number(p.interest) || 0), 0);
-      const totPrin = payments.reduce((acc, p) => acc + (Number(p.principal) || 0) + (Number(p.extra) || 0), 0);
+      const totInt = hasPayments ? payments.reduce((acc, p) => acc + (Number(p.interest) || 0), 0) : 0;
+      const totPrin = hasPayments ? payments.reduce((acc, p) => acc + (Number(p.principal) || 0) + (Number(p.extra) || 0), 0) : 0;
       if (document.getElementById('kpi-interest-paid')) document.getElementById('kpi-interest-paid').textContent = fmt(totInt);
       if (document.getElementById('kpi-capital-paid')) document.getElementById('kpi-capital-paid').textContent = fmt(totPrin);
 
@@ -1806,7 +1835,13 @@
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      if (payments.length < 2) return;
+      if (payments.length < 2) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText("Sin datos registrados para mostrar la gráfica", w / 2, h / 2);
+        return;
+      }
 
       const pad = { top: 20, right: 15, bottom: 25, left: 45 };
       const plotW = w - pad.left - pad.right;
@@ -1879,7 +1914,13 @@
       ctx.clearRect(0, 0, w, h);
 
       const recent = payments.slice(-12);
-      if (recent.length === 0) return;
+      if (recent.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText("Sin datos registrados", w / 2, h / 2);
+        return;
+      }
 
       const pad = { top: 20, right: 10, bottom: 25, left: 35 };
       const plotW = w - pad.left - pad.right;
