@@ -956,58 +956,62 @@
     <!-- ============================================== -->
     <div id="tab-content-dashboard">
       
-      <!-- Primary KPI Grid -->
+      <!-- Primary KPI Grid: Centrado en los Pagos y Desfase de Laura -->
       <div class="kpi-container">
-        <!-- KPI 1 -->
-        <div class="kpi-box">
+        <!-- KPI 1: Protagonista - Desfase Acumulado de Laura -->
+        <div class="kpi-box" style="border-color: rgba(16, 185, 129, 0.4); box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);">
           <div class="kpi-label">
-            <span>Capital Pendiente</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+            <span style="color: var(--primary); font-weight: 800;">Desfase Acumulado Laura</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           </div>
-          <div id="kpi-remaining" class="kpi-num">118.500,00 €</div>
+          <div id="kpi-acc-balance" class="kpi-num" style="color: var(--primary); font-size: 24px;">+26,15 €</div>
           <div class="kpi-desc">
-            Amortizado: <strong id="kpi-amort-pct" style="color: var(--primary);">2,6%</strong>
+            Desfase último mes: <strong id="kpi-month-gap" style="color: var(--primary);">+218,19 €</strong>
+            <br>
+            <span id="kpi-balance-status" style="color: var(--text-muted); font-size: 10px;">Saldo acumulado a favor de Laura</span>
+          </div>
+        </div>
+
+        <!-- KPI 2: Gastos Totales del Piso de Laura -->
+        <div class="kpi-box secondary">
+          <div class="kpi-label">
+            <span>Gastos Piso de Laura</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          </div>
+          <div id="kpi-laura-total-expenses" class="kpi-num">281,81 €</div>
+          <div class="kpi-desc">
+            Ingreso Laura: <strong id="kpi-laura-deposit" style="color: #fff;">500,00 €</strong>
+            <br>
+            <span>Hipot. <strong id="kpi-exp-hip">165,81€</strong> + Com. <strong id="kpi-exp-com">81€</strong> + Luz <strong id="kpi-exp-luz">35€</strong></span>
+          </div>
+        </div>
+
+        <!-- KPI 3: Cuota de Hipoteca de Laura -->
+        <div class="kpi-box purple">
+          <div class="kpi-label">
+            <span>Cuota Hipoteca Laura</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+          </div>
+          <div id="kpi-fee-laura" class="kpi-num" style="color: var(--purple);">165,81 €</div>
+          <div class="kpi-desc">
+            Cuota Banco: <strong id="kpi-total-fee" style="color: #fff;">513,81 €</strong> (Laura 32,27%)
+            <br>
+            <span>Rak aporta: <strong id="kpi-fee-rak">348,00 €</strong> (67,73%)</span>
+          </div>
+        </div>
+
+        <!-- KPI 4: Capital Pendiente Laura & Global -->
+        <div class="kpi-box amber">
+          <div class="kpi-label">
+            <span>Capital Pendiente Laura</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          </div>
+          <div id="kpi-laura-remaining" class="kpi-num" style="color: var(--amber);">38.239,95 €</div>
+          <div class="kpi-desc">
+            Total Préstamo: <strong id="kpi-remaining">118.500,00 €</strong>
           </div>
           <div class="progress-track">
             <div id="kpi-progress-bar" class="progress-fill" style="width: 2.6%;"></div>
-          </div>
-        </div>
-
-        <!-- KPI 2 -->
-        <div class="kpi-box secondary">
-          <div class="kpi-label">
-            <span>Cuota Mensual Banco</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-          </div>
-          <div id="kpi-total-fee" class="kpi-num">513,81 €</div>
-          <div class="kpi-desc">
-            <span style="color: var(--primary); font-weight: 700;">Laura: <span id="kpi-fee-laura">283,63 €</span></span>
-            <br>
-            <span style="color: var(--purple); font-weight: 700;">Rak: <span id="kpi-fee-rak">230,18 €</span></span>
-          </div>
-        </div>
-
-        <!-- KPI 3 -->
-        <div class="kpi-box amber">
-          <div class="kpi-label">
-            <span>Intereses Acumulados</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-          </div>
-          <div id="kpi-interest-paid" class="kpi-num" style="color: var(--amber);">8.540,20 €</div>
-          <div class="kpi-desc">
-            Capital devuelto: <strong id="kpi-capital-paid" style="color: #fff;">22.845,00 €</strong>
-          </div>
-        </div>
-
-        <!-- KPI 4 -->
-        <div class="kpi-box purple">
-          <div class="kpi-label">
-            <span>Saldo Cuenta Vivienda</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path></svg>
-          </div>
-          <div id="kpi-acc-balance" class="kpi-num" style="color: var(--primary);">+26,15 €</div>
-          <div class="kpi-desc">
-            Comunidad: <strong>81 €</strong> | Ingreso Laura: <strong>500 €</strong>
           </div>
         </div>
       </div>
@@ -1166,25 +1170,24 @@
         </div>
       </div>
 
-      <!-- Historical Table -->
+      <!-- Historical Table: Control de Pagos y Desfase de Laura -->
       <div class="table-container">
         <table>
           <thead>
             <tr>
               <th>Periodo</th>
-              <th>Revisión / Tramo</th>
-              <th>Cuota Banco</th>
-              <th style="color: var(--primary);">Laura (~32,27%)</th>
-              <th style="color: var(--purple);">Rak (~67,73%)</th>
-              <th style="color: var(--amber);">Intereses</th>
-              <th>Capital</th>
-              <th>Extra Amort.</th>
+              <th>Revisión</th>
+              <th style="color: var(--primary);">Ingreso Laura</th>
+              <th style="color: var(--purple);">Hipot. Laura (~32,27%)</th>
               <th>Comunidad</th>
               <th>Luz</th>
               <th>Seguro / IBI</th>
-              <th style="color: var(--primary);">Ingreso Laura</th>
-              <th>Saldo Cuenta</th>
-              <th>Capital Pendiente</th>
+              <th>Derramas / Extra</th>
+              <th style="color: var(--amber);">Total Gastos</th>
+              <th>Desfase Mes</th>
+              <th style="color: var(--primary); font-weight: 800;">Desfase Acumulado</th>
+              <th>Cuota Banco</th>
+              <th>Pendiente Global</th>
               <th style="text-align: center;">Acción</th>
             </tr>
           </thead>
@@ -1654,7 +1657,9 @@
 
         const expense = (Number(p.co1) || 0) + (Number(p.community) || 0) + (Number(p.electricity) || 0) +
                         (Number(p.insurance) || 0) + (Number(p.ibi) || 0) + (Number(p.otherExtra) || 0);
-        accBal += ((Number(p.deposit) || 0) - expense);
+        p.totalExpenses = expense;
+        p.monthGap = ((Number(p.deposit) || 0) - expense);
+        accBal += p.monthGap;
         p.accBalance = accBal;
       });
     }
@@ -1669,21 +1674,54 @@
       const amortized = Math.max(0, settings.initialCapital - remaining);
       const pct = (amortized / settings.initialCapital) * 100;
 
-      document.getElementById('kpi-remaining').textContent = fmt(remaining);
-      document.getElementById('kpi-amort-pct').textContent = pct.toFixed(1) + '%';
-      document.getElementById('kpi-progress-bar').style.width = Math.min(100, pct) + '%';
-
       const fee = latest ? latest.totalFee : 513.81;
       const lauraFee = latest ? latest.co1 : (fee * (settings.coOwner1Percentage / 100));
       const rakFee = latest ? latest.co2 : (fee - lauraFee);
+
+      document.getElementById('kpi-remaining').textContent = fmt(remaining);
+      document.getElementById('kpi-amort-pct').textContent = pct.toFixed(1) + '%';
+      document.getElementById('kpi-progress-bar').style.width = Math.min(100, pct) + '%';
 
       document.getElementById('kpi-total-fee').textContent = fmt(fee);
       document.getElementById('kpi-fee-laura').textContent = fmt(lauraFee);
       document.getElementById('kpi-fee-rak').textContent = fmt(rakFee);
 
-      // Co-owners agreement dynamic percentages
+      // Laura Desfase KPIs
+      const accBal = latest ? latest.accBalance : 26.15;
+      const mGap = latest ? (latest.monthGap || 0) : 0;
+      const accElem = document.getElementById('kpi-acc-balance');
+      accElem.textContent = (accBal >= 0 ? '+' : '') + fmt(accBal);
+      accElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+
+      const mGapElem = document.getElementById('kpi-month-gap');
+      if (mGapElem) {
+        mGapElem.textContent = (mGap >= 0 ? '+' : '') + fmt(mGap);
+        mGapElem.style.color = mGap >= 0 ? 'var(--primary)' : 'var(--red)';
+      }
+
+      const statusElem = document.getElementById('kpi-balance-status');
+      if (statusElem) {
+        statusElem.textContent = accBal >= 0 
+          ? "Saldo acumulado a favor de Laura (+)" 
+          : "Laura tiene saldo pendiente de regularizar (-)";
+        statusElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
+      }
+
+      if (document.getElementById('kpi-laura-total-expenses')) {
+        document.getElementById('kpi-laura-total-expenses').textContent = fmt(latest ? latest.totalExpenses : 281.81);
+        document.getElementById('kpi-laura-deposit').textContent = fmt(latest ? latest.deposit : 500);
+        document.getElementById('kpi-exp-hip').textContent = fmt(lauraFee);
+        document.getElementById('kpi-exp-com').textContent = fmt(latest ? latest.community : 81);
+        document.getElementById('kpi-exp-luz').textContent = fmt(latest ? latest.electricity : 35);
+      }
+
       const pctLaura = settings.coOwner1Percentage;
       const pctRak = settings.coOwner2Percentage;
+      if (document.getElementById('kpi-laura-remaining')) {
+        document.getElementById('kpi-laura-remaining').textContent = fmt(remaining * (pctLaura / 100));
+      }
+
+      // Co-owners agreement dynamic percentages
       if (document.getElementById('laura-pct-label')) {
         document.getElementById('laura-pct-label').textContent = pctLaura.toFixed(2).replace('.', ',') + '%';
         document.getElementById('rak-pct-label').textContent = pctRak.toFixed(2).replace('.', ',') + '%';
@@ -1920,6 +1958,8 @@
 
       list.forEach(p => {
         const tr = document.createElement('tr');
+        const gapColor = p.monthGap >= 0 ? 'var(--primary)' : 'var(--red)';
+        const accColor = p.accBalance >= 0 ? 'var(--primary)' : 'var(--red)';
         tr.innerHTML = `
           <td>
             <strong>${MONTH_LABELS[p.month - 1]}</strong>
@@ -1927,18 +1967,17 @@
             ${p.extra > 0 ? `<span class="tag-extra">EXTRA</span>` : ''}
           </td>
           <td>${getRevisionBadge(p.year, p.month)}</td>
-          <td style="font-weight: 700; color: #fff;">${fmt(p.totalFee)}</td>
-          <td style="color: var(--primary); font-weight: 600;">${fmt(p.co1)}</td>
-          <td style="color: var(--purple); font-weight: 600;">${fmt(p.co2)}</td>
-          <td style="color: var(--amber);">${fmt(p.interest)}</td>
-          <td>${fmt(p.principal)}</td>
-          <td style="color: var(--amber); font-weight: 700;">${p.extra > 0 ? fmt(p.extra) : '-'}</td>
+          <td style="color: var(--primary); font-weight: 700;">${fmt(p.deposit)}</td>
+          <td style="color: var(--purple); font-weight: 700;">${fmt(p.co1)}</td>
           <td style="color: var(--text-muted);">${p.community ? fmt(p.community) : '-'}</td>
           <td style="color: var(--text-muted);">${p.electricity ? fmt(p.electricity) : '-'}</td>
           <td style="color: var(--text-muted);">${((p.insurance||0)+(p.ibi||0)) ? fmt((p.insurance||0)+(p.ibi||0)) : '-'}</td>
-          <td style="color: var(--primary); font-weight: 600;">${p.deposit ? fmt(p.deposit) : '-'}</td>
-          <td style="font-weight: 600; color: ${p.accBalance >= 0 ? 'var(--primary)' : 'var(--red)'};">${fmt(p.accBalance)}</td>
-          <td style="font-weight: 800; color: #fff;">${fmt(p.remaining)}</td>
+          <td style="color: var(--amber);">${(p.otherExtra || p.extra) ? fmt(p.otherExtra || p.extra) : '-'}</td>
+          <td style="color: var(--amber); font-weight: 700;">${fmt(p.totalExpenses)}</td>
+          <td style="font-weight: 700; color: ${gapColor};">${p.monthGap >= 0 ? '+' : ''}${fmt(p.monthGap)}</td>
+          <td style="font-weight: 800; font-size: 13px; color: ${accColor}; background: ${p.accBalance >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 6px; padding: 6px 10px;">${p.accBalance >= 0 ? '+' : ''}${fmt(p.accBalance)}</td>
+          <td style="color: var(--text-muted); font-size: 11px;">${fmt(p.totalFee)}</td>
+          <td style="color: var(--text-muted); font-size: 11px;">${fmt(p.remaining)}</td>
           <td style="text-align: center;">
             <button onclick="openEditModal(${p.id})" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;">Editar</button>
           </td>
@@ -1947,9 +1986,9 @@
       });
     }
 
-    /* Modal Form for Add / Edit */
+    /* Modal Form for Add / Edit: Arrastra automáticamente los gastos anteriores */
     function openModal() {
-      document.getElementById('modal-title-text').textContent = "Registrar Nuevo Mes";
+      document.getElementById('modal-title-text').textContent = "Registrar Mes de Laura (Arrastra Gastos)";
       document.getElementById('p-edit-id').value = "";
       document.getElementById('btn-delete-row').style.display = "none";
 
@@ -1960,23 +1999,29 @@
 
       document.getElementById('p-year').value = y;
       document.getElementById('p-month').value = m;
-      document.getElementById('p-total-fee').value = 513.81;
 
+      // Arrastra cuota del banco del mes anterior
+      const prevFee = latest ? latest.totalFee : 513.81;
+      document.getElementById('p-total-fee').value = prevFee.toFixed(2);
+
+      // Calcula automáticamente la parte de Laura (32,27%)
       calculateSplitFee();
 
       const bal = latest ? latest.remaining : settings.initialCapital;
       const rate = settings.annualInterestRate / 100 / 12;
       const int = bal * rate;
-      const prin = Math.max(0, 513.81 - int);
+      const prin = Math.max(0, prevFee - int);
 
       document.getElementById('p-interest').value = int.toFixed(2);
       document.getElementById('p-principal').value = prin.toFixed(2);
       document.getElementById('p-extra').value = "0.00";
-      document.getElementById('p-community').value = "81.00";
-      document.getElementById('p-electricity').value = "35.00";
+
+      // Arrastra automáticamente los gastos del piso del mes anterior
+      document.getElementById('p-community').value = (latest ? (latest.community || 81) : 81).toFixed(2);
+      document.getElementById('p-electricity').value = (latest ? (latest.electricity || 35) : 35).toFixed(2);
       document.getElementById('p-insurance-ibi').value = "0.00";
-      document.getElementById('p-deposit').value = "500.00";
-      document.getElementById('p-notes').value = "Cuota ordinaria";
+      document.getElementById('p-deposit').value = (latest ? (latest.deposit || 500) : 500).toFixed(2);
+      document.getElementById('p-notes').value = "Cuota ordinaria + gastos piso";
 
       document.getElementById('payment-modal').classList.add('active');
     }
