@@ -89,7 +89,7 @@ let revisions = [
 let payments = [];
 
 /* ==========================================================
-   FIRESTORE CLOUD SYNCHRONIZATION (SEGUIMIENTO SOLAR PATTERN)
+   FIRESTORE CLOUD SYNCHRONIZATION
    ========================================================== */
 const DEFAULT_SYNC_KEY = 'mi_sistema_hipoteca';
 let currentSyncKey = DEFAULT_SYNC_KEY;
@@ -145,7 +145,6 @@ function loadStateFromStorage() {
     if (storedData !== null) {
       payments = JSON.parse(storedData) || [];
     } else {
-      // Intenta migrar de v5 si existía
       const oldV5 = localStorage.getItem('hipoteca_payments_v5');
       if (oldV5) payments = JSON.parse(oldV5) || [];
       else payments = [];
@@ -272,6 +271,7 @@ function getOriginalExcelSeed() {
       insurance: r.seg || 0,
       ibi: r.ibi || 0,
       otherExtra: r.ext || 0,
+      lauraExtraAmort: 0.0,
       deposit: r.dep,
       notes: r.n || "Cuota ordinaria",
       remaining: bal
@@ -282,6 +282,7 @@ function getOriginalExcelSeed() {
 function recomputeBalances() {
   let bal = settings.initialCapital;
   let accBal = 0;
+  let totLauraDiscount = 0;
 
   payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
@@ -298,8 +299,13 @@ function recomputeBalances() {
     const ins = Number(p.insurance) || 0;
     const ibi = Number(p.ibi) || 0;
     const other = Number(p.otherExtra) || 0;
+    const lDiscount = Number(p.lauraExtraAmort) || 0;
 
-    const expense = co1 + com + luz + derr + ins + ibi + other;
+    totLauraDiscount += lDiscount;
+    p.accLauraDiscount = totLauraDiscount;
+
+    // Laura's total monthly expenses include regular expenses + any direct capital discount to Rak
+    const expense = co1 + com + luz + derr + ins + ibi + other + lDiscount;
     p.totalExpenses = expense;
     p.monthGap = ((Number(p.deposit) || 0) - expense);
     accBal += p.monthGap;
@@ -321,6 +327,39 @@ function getActiveRevisionForDate(year, month) {
     }
   }
   return matched;
+}
+
+function checkCapitalDiscrepancy() {
+  if (!payments || payments.length === 0 || !revisions || revisions.length === 0) {
+    const banner = document.getElementById('capital-mismatch-banner');
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+
+  const latest = payments[payments.length - 1];
+  const rev = getActiveRevisionForDate(latest.year, latest.month);
+  if (!rev) return;
+
+  // Expected trajectory from the revision benchmark:
+  // Find payments since the revision's start date
+  const revStartPayments = payments.filter(p => p.year > rev.startYear || (p.year === rev.startYear && p.month >= rev.startMonth));
+  
+  // Calculate expected capital if starting from rev.capTotal
+  let expectedCap = rev.capTotal;
+  revStartPayments.forEach(p => {
+    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + (Number(p.extra) || 0)));
+  });
+
+  const diff = Math.abs(latest.remaining - expectedCap);
+  const banner = document.getElementById('capital-mismatch-banner');
+  const textEl = document.getElementById('capital-mismatch-text');
+
+  if (diff > 50 && banner && textEl) {
+    banner.style.display = 'flex';
+    textEl.innerHTML = `Descuadre de <strong>${fmt(diff)}</strong> entre el capital pendiente acumulado (${fmt(latest.remaining)}) y la referencia bancaria (${fmt(expectedCap)}) de <em>${rev.name}</em>.`;
+  } else if (banner) {
+    banner.style.display = 'none';
+  }
 }
 
 function updateDashboardUI() {
@@ -367,12 +406,12 @@ function updateDashboardUI() {
   const statusElem = document.getElementById('kpi-balance-status');
   if (statusElem) {
     if (!hasPayments) {
-      statusElem.textContent = "Sin meses registrados todavía";
+      statusElem.textContent = "Sin meses registrados";
       statusElem.style.color = "var(--text-muted)";
     } else {
       statusElem.textContent = accBal >= 0 
         ? "Saldo acumulado a favor de Laura (+)" 
-        : "Laura tiene saldo pendiente de regularizar (-)";
+        : "Saldo pendiente de regularizar (-)";
       statusElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
     }
   }
@@ -384,6 +423,9 @@ function updateDashboardUI() {
     document.getElementById('kpi-exp-com').textContent = hasPayments ? fmt(latest.community) : "0,00 €";
     document.getElementById('kpi-exp-luz').textContent = hasPayments ? fmt(latest.electricity) : "0,00 €";
   }
+
+  const totalLauraDirectAmort = latest ? (latest.accLauraDiscount || 0) : 0;
+  const pendingLauraDebt = Math.max(0, (settings.internalDebtLaura || 0) - totalLauraDirectAmort);
 
   if (document.getElementById('kpi-laura-remaining')) {
     document.getElementById('kpi-laura-remaining').textContent = fmt(remaining * (pctLaura / 100));
@@ -399,7 +441,7 @@ function updateDashboardUI() {
     document.getElementById('split-track-rak').style.width = pctRak + '%';
   }
 
-  // 3 Revisions boxes on Dashboard (from real stored revisions)
+  // 3 Revisions boxes on Dashboard
   const rNov = revisions.find(r => r.startMonth === 11 || r.startMonth === 12) || revisions[0];
   const rFeb = revisions.find(r => r.startMonth >= 2 && r.startMonth <= 5) || revisions[1];
   const rJul = revisions.find(r => r.startMonth >= 6 && r.startMonth <= 9) || revisions[2];
@@ -420,9 +462,10 @@ function updateDashboardUI() {
     document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
   }
 
-  document.getElementById('val-debt-laura').textContent = fmt(settings.internalDebtLaura || 0);
+  document.getElementById('val-debt-laura').textContent = fmt(pendingLauraDebt);
   document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak || 0);
 
+  checkCapitalDiscrepancy();
   renderHistoryTable();
   renderRevisionsTable();
   drawFinancialCharts();
@@ -619,7 +662,7 @@ function renderHistoryTable() {
 
   tbody.innerHTML = '';
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; padding: 32px; color: var(--text-muted);">No se encontraron mensualidades. Pulsa "+ Añadir Mes" para registrar.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" style="text-align: center; padding: 32px; color: var(--text-muted);">No se encontraron mensualidades.</td></tr>';
     return;
   }
 
@@ -642,6 +685,7 @@ function renderHistoryTable() {
       <td style="color: var(--amber); font-weight: 600;">${p.derramas ? fmt(p.derramas) : '-'}</td>
       <td style="color: var(--text-muted);">${((p.insurance||0)+(p.ibi||0)) ? fmt((p.insurance||0)+(p.ibi||0)) : '-'}</td>
       <td style="color: var(--text-muted);">${p.otherExtra ? fmt(p.otherExtra) : '-'}</td>
+      <td style="color: #38bdf8; font-weight: 700;">${p.lauraExtraAmort ? fmt(p.lauraExtraAmort) : '-'}</td>
       <td style="color: #f43f5e; font-weight: 700;">${fmt(p.totalExpenses)}</td>
       <td style="font-weight: 700; color: ${gapColor};">${p.monthGap >= 0 ? '+' : ''}${fmt(p.monthGap)}</td>
       <td style="font-weight: 800; font-size: 13px; color: ${accColor}; background: ${p.accBalance >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 6px; padding: 6px 10px;">${p.accBalance >= 0 ? '+' : ''}${fmt(p.accBalance)}</td>
@@ -656,7 +700,7 @@ function renderHistoryTable() {
 }
 
 /* ==========================================================
-   REVISIONS MANAGER (NOVIEMBRE, FEBRERO, JULIO...)
+   REVISIONS MANAGER
    ========================================================== */
 function renderRevisionsTable() {
   const tbody = document.getElementById('revisions-table-body');
@@ -666,7 +710,7 @@ function renderRevisionsTable() {
   tbody.innerHTML = '';
 
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center; padding: 24px; color: var(--text-muted);">No hay periodos de revisión creados. Pulsa "+ Añadir Periodo".</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center; padding: 24px; color: var(--text-muted);">No hay periodos de revisión creados.</td></tr>';
     return;
   }
 
@@ -697,7 +741,7 @@ function renderRevisionsTable() {
 function openRevisionModal(id = null) {
   document.getElementById('rev-edit-id').value = id || "";
   document.getElementById('btn-delete-revision').style.display = id ? "inline-flex" : "none";
-  document.getElementById('rev-modal-title').textContent = id ? "Editar Periodo de Revisión" : "Añadir Periodo de Revisión";
+  document.getElementById('rev-modal-title').textContent = id ? "Editar Periodo" : "Añadir Periodo";
 
   if (id) {
     const r = revisions.find(x => x.id === id);
@@ -825,10 +869,10 @@ function submitRevisionHandler(e) {
   if (editId) {
     const idx = revisions.findIndex(x => x.id == editId);
     if (idx !== -1) revisions[idx] = revObj;
-    showToast("Periodo de revisión actualizado");
+    showToast("Periodo actualizado");
   } else {
     revisions.push(revObj);
-    showToast("Nuevo periodo de revisión añadido");
+    showToast("Periodo añadido");
   }
 
   saveStateToStorage();
@@ -845,7 +889,7 @@ function deleteCurrentRevision() {
     saveStateToStorage();
     closeRevisionModal();
     updateDashboardUI();
-    showToast("Periodo de revisión eliminado");
+    showToast("Periodo eliminado");
   }
 }
 
@@ -853,7 +897,7 @@ function applyRevisionToRange(revId) {
   const rev = revisions.find(x => x.id === revId);
   if (!rev) return;
 
-  if (confirm(`¿Deseas aplicar las cuotas y % de "${rev.name}" a los meses históricos a partir de ${MONTH_LABELS[rev.startMonth-1]} ${rev.startYear}?`)) {
+  if (confirm(`¿Aplicar cuotas y % de "${rev.name}" a los meses a partir de ${MONTH_LABELS[rev.startMonth-1]} ${rev.startYear}?`)) {
     let count = 0;
     payments.forEach(p => {
       if (p.year > rev.startYear || (p.year === rev.startYear && p.month >= rev.startMonth)) {
@@ -868,7 +912,7 @@ function applyRevisionToRange(revId) {
     recomputeBalances();
     saveStateToStorage();
     updateDashboardUI();
-    showToast(`Se han actualizado ${count} meses con este periodo`);
+    showToast(`Se han actualizado ${count} meses`);
   }
 }
 
@@ -876,7 +920,7 @@ function applyRevisionToRange(revId) {
    MONTH REGISTRATION FORM & REACTIVE BIDIRECTIONAL MATH
    ========================================================== */
 function openModal() {
-  document.getElementById('modal-title-text').textContent = "Registrar Mes de Laura";
+  document.getElementById('modal-title-text').textContent = "Registrar Mes";
   document.getElementById('p-edit-id').value = "";
   document.getElementById('btn-delete-row').style.display = "none";
 
@@ -892,7 +936,7 @@ function openModal() {
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? `📌 Periodo: ${rev.name} (Laura ${rev.pctLaura.toFixed(2)}%)` : "📌 Periodo General";
+    badge.textContent = rev ? `📌 Periodo: ${rev.name} (${rev.pctLaura.toFixed(2)}%)` : "📌 Periodo General";
   }
 
   const fee = rev ? rev.feeTotal : (latest ? latest.totalFee : 513.81);
@@ -915,8 +959,9 @@ function openModal() {
   document.getElementById('p-derramas').value = (latest ? (latest.derramas || 0) : 0).toFixed(2);
   document.getElementById('p-insurance-ibi').value = "0.00";
   document.getElementById('p-other-extra').value = "0.00";
+  document.getElementById('p-laura-extra-amort').value = "0.00";
   document.getElementById('p-deposit').value = (latest ? (latest.deposit || 500) : 500).toFixed(2);
-  document.getElementById('p-notes').value = "Cuota ordinaria + gastos piso";
+  document.getElementById('p-notes').value = "";
 
   updateLiveModalSummary();
   document.getElementById('payment-modal').classList.add('active');
@@ -955,6 +1000,7 @@ function openEditModal(id) {
   document.getElementById('p-derramas').value = (p.derramas || 0).toFixed(2);
   document.getElementById('p-insurance-ibi').value = ((p.insurance || 0) + (p.ibi || 0)).toFixed(2);
   document.getElementById('p-other-extra').value = (p.otherExtra || 0).toFixed(2);
+  document.getElementById('p-laura-extra-amort').value = (p.lauraExtraAmort || 0).toFixed(2);
   document.getElementById('p-deposit').value = (p.deposit || 0).toFixed(2);
   document.getElementById('p-notes').value = p.notes || "";
 
@@ -972,7 +1018,7 @@ function onPaymentDateChange() {
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? `📌 Periodo detectado: ${rev.name} (Laura ${rev.pctLaura.toFixed(2)}%)` : "📌 Periodo General";
+    badge.textContent = rev ? `📌 Periodo detectado: ${rev.name} (${rev.pctLaura.toFixed(2)}%)` : "📌 Periodo General";
   }
 
   const editId = document.getElementById('p-edit-id').value;
@@ -1050,9 +1096,10 @@ function updateLiveModalSummary() {
   const derr = Number(document.getElementById('p-derramas')?.value) || 0;
   const ins = Number(document.getElementById('p-insurance-ibi')?.value) || 0;
   const other = Number(document.getElementById('p-other-extra')?.value) || 0;
+  const lExtraAmort = Number(document.getElementById('p-laura-extra-amort')?.value) || 0;
   const dep = Number(document.getElementById('p-deposit')?.value) || 0;
 
-  const totalExp = co1 + com + luz + derr + ins + other;
+  const totalExp = co1 + com + luz + derr + ins + other + lExtraAmort;
   const gap = dep - totalExp;
 
   const sumExpEl = document.getElementById('p-sum-expenses');
@@ -1080,6 +1127,7 @@ function submitPaymentHandler(e) {
   const derr = Number(document.getElementById('p-derramas').value) || 0;
   const insIbi = Number(document.getElementById('p-insurance-ibi').value) || 0;
   const other = Number(document.getElementById('p-other-extra').value) || 0;
+  const lExtraAmort = Number(document.getElementById('p-laura-extra-amort').value) || 0;
   const dep = Number(document.getElementById('p-deposit').value) || 0;
   const notes = document.getElementById('p-notes').value || "";
 
@@ -1099,6 +1147,7 @@ function submitPaymentHandler(e) {
     insurance: insIbi,
     ibi: 0,
     otherExtra: other,
+    lauraExtraAmort: lExtraAmort,
     deposit: dep,
     notes
   };
@@ -1106,20 +1155,18 @@ function submitPaymentHandler(e) {
   if (editId) {
     const idx = payments.findIndex(x => x.id == editId);
     if (idx !== -1) payments[idx] = paymentObj;
-    showToast("Mes actualizado correctamente");
+    showToast("Mes actualizado");
   } else {
-    // Si ya existe un pago para ese mismo año y mes, sobrescribir
     const existingIdx = payments.findIndex(x => x.year === y && x.month === m);
     if (existingIdx !== -1) {
       payments[existingIdx] = { ...paymentObj, id: payments[existingIdx].id };
-      showToast("Mes actualizado en el histórico");
+      showToast("Mes actualizado en histórico");
     } else {
       payments.push(paymentObj);
-      showToast("Nuevo mes guardado en el histórico");
+      showToast("Mes guardado en histórico");
     }
   }
 
-  // Reset filter to 'ALL' so new month is always visible
   const filterYear = document.getElementById('filter-year-select');
   if (filterYear) filterYear.value = 'ALL';
   const filterSearch = document.getElementById('filter-search');
@@ -1135,7 +1182,7 @@ function deleteCurrentRow() {
   const editId = document.getElementById('p-edit-id').value;
   if (!editId) return;
 
-  if (confirm("¿Estás seguro de que deseas eliminar este registro mensual?")) {
+  if (confirm("¿Estás seguro de eliminar este registro mensual?")) {
     payments = payments.filter(x => x.id != editId);
     recomputeBalances();
     saveStateToStorage();
@@ -1201,7 +1248,7 @@ function saveSettingsHandler(e) {
   saveStateToStorage();
   recomputeBalances();
   updateDashboardUI();
-  showToast("Ajustes guardados correctamente");
+  showToast("Ajustes guardados");
 }
 
 function openAgreementModal() {
@@ -1257,7 +1304,7 @@ function submitAgreementHandler(e) {
   recomputeBalances();
   updateDashboardUI();
   closeAgreementModal();
-  showToast("Acuerdo entre copropietarios actualizado");
+  showToast("Acuerdo actualizado");
 }
 
 /* ==========================================================
@@ -1266,17 +1313,17 @@ function submitAgreementHandler(e) {
 function exportDataJSON() {
   const blob = new Blob([JSON.stringify({ settings, revisions, payments }, null, 2)], { type: 'application/json' });
   triggerDownload(blob, `hipoteca_conjunta_backup_${Date.now()}.json`);
-  showToast("Copia de seguridad JSON exportada");
+  showToast("JSON exportado");
 }
 
 function exportDataCSV() {
-  let csv = "Año,Mes,Cuota Banco,Laura,Rak,Intereses,Capital,Comunidad,Luz,Derramas,Seguro_IBI,Otros,Ingreso Laura,Desfase Mes,Desfase Acumulado,Pendiente\n";
+  let csv = "Año,Mes,Cuota Banco,Laura,Rak,Intereses,Capital,Comunidad,Luz,Derramas,Seguro_IBI,Otros,Desc_Laura_Rak,Ingreso Laura,Desfase Mes,Desfase Acumulado,Pendiente\n";
   payments.forEach(p => {
-    csv += `${p.year},${MONTH_LABELS[p.month-1]},${p.totalFee},${p.co1},${p.co2},${p.interest||0},${p.principal||0},${p.community||0},${p.electricity||0},${p.derramas||0},${(p.insurance||0)+(p.ibi||0)},${p.otherExtra||0},${p.deposit||0},${p.monthGap||0},${p.accBalance||0},${p.remaining||0}\n`;
+    csv += `${p.year},${MONTH_LABELS[p.month-1]},${p.totalFee},${p.co1},${p.co2},${p.interest||0},${p.principal||0},${p.community||0},${p.electricity||0},${p.derramas||0},${(p.insurance||0)+(p.ibi||0)},${p.otherExtra||0},${p.lauraExtraAmort||0},${p.deposit||0},${p.monthGap||0},${p.accBalance||0},${p.remaining||0}\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   triggerDownload(blob, `hipoteca_conjunta_historico_${Date.now()}.csv`);
-  showToast("Archivo CSV para Excel exportado");
+  showToast("CSV exportado");
 }
 
 function triggerDownload(blob, name) {
@@ -1305,24 +1352,24 @@ function importDataJSON(e) {
         showToast("Datos importados exitosamente");
       }
     } catch (err) {
-      showToast("Error al importar el archivo JSON");
+      showToast("Error al importar archivo");
     }
   };
   reader.readAsText(file);
 }
 
 function clearAllData() {
-  if (confirm("¿Estás seguro de que deseas borrar TODOS los pagos y empezar desde cero? Se vaciará el histórico para que introduzcas tus propios datos.")) {
+  if (confirm("¿Borrar todos los pagos y empezar desde cero?")) {
     payments = [];
     recomputeBalances();
     saveStateToStorage();
     updateDashboardUI();
-    showToast("Se han borrado todos los pagos. Listo para empezar.");
+    showToast("Histórico vaciado");
   }
 }
 
 function resetToExcelOriginal() {
-  if (confirm("¿Deseas restablecer todos los datos a la hoja de cálculo original de Laura y Rak?")) {
+  if (confirm("¿Restablecer datos originales del Excel?")) {
     settings.initialCapital = 121766.32;
     settings.internalDebtLaura = 71500.0;
     settings.internalDebtRak = 53500.0;
@@ -1332,7 +1379,7 @@ function resetToExcelOriginal() {
     recomputeBalances();
     saveStateToStorage();
     updateDashboardUI();
-    showToast("Datos originales del Excel restaurados");
+    showToast("Datos de Excel restaurados");
   }
 }
 
@@ -1350,9 +1397,7 @@ function updateSyncUI() {
   const bannerText = document.getElementById('banner-sync-text');
   const bannerDot = document.getElementById('banner-sync-dot');
   if (bannerText) {
-    bannerText.textContent = isBase
-      ? "Conectado al sistema base. Pulsa en 'Cambiar Cuenta' para sincronizar con tu propio identificador."
-      : `🟢 Conectado a la cuenta: ${currentSyncKey}. Los cambios se sincronizan en tiempo real.`;
+    bannerText.textContent = isBase ? "Sincronización activa (sistema base)" : `Sincronización activa (${currentSyncKey})`;
   }
   if (bannerDot) bannerDot.style.background = isBase ? '#f59e0b' : '#10b981';
 
@@ -1360,7 +1405,7 @@ function updateSyncUI() {
   const activeLabel = document.getElementById('sync-active-label');
   const inputKey = document.getElementById('sync-input-key');
   if (modalBadge) {
-    modalBadge.textContent = isBase ? 'Sistema base' : '🟢 Conectado';
+    modalBadge.textContent = isBase ? 'Sistema base' : 'Conectado';
     modalBadge.style.background = isBase ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)';
     modalBadge.style.color = isBase ? '#fcd34d' : '#84cc16';
   }
@@ -1369,7 +1414,7 @@ function updateSyncUI() {
 
   const settingsBadge = document.getElementById('settings-sync-badge');
   if (settingsBadge) {
-    settingsBadge.textContent = isBase ? 'Sistema base' : '🟢 Conectado a Firestore';
+    settingsBadge.textContent = isBase ? 'Sistema base' : 'Conectado';
     settingsBadge.style.color = isBase ? '#fcd34d' : 'var(--primary)';
   }
 }
@@ -1463,17 +1508,17 @@ function handleSyncConnect(e) {
   const input = document.getElementById('sync-input-key');
   const val = (input?.value || '').trim();
   if (!val) {
-    alert("Por favor introduce tu correo electrónico o un código identificador.");
+    alert("Introduce un correo electrónico o código identificador.");
     return;
   }
   setSyncKey(val);
   closeSyncModal();
-  showToast("Conectado a: " + val + " ☁️");
+  showToast("Conectado: " + val + " ☁️");
 }
 
 function forceCloudSave() {
   syncToFirestoreIfAvailable(false);
-  showToast("Guardado forzado en Firestore ☁️");
+  showToast("Guardado forzado ☁️");
 }
 
 function showToast(msg) {

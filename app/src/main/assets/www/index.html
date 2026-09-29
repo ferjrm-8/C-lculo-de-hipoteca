@@ -939,7 +939,6 @@
             Hipoteca Conjunta
             <span class="badge-pill">Laura & Rak</span>
           </div>
-          <div class="brand-subtitle">Control de amortización, reparto equitativo y gastos comunes</div>
         </div>
       </div>
 
@@ -979,13 +978,13 @@
     </header>
 
     <!-- Cloud Sync Status Bar -->
-    <div id="cloud-sync-banner" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 9px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+    <div id="cloud-sync-banner" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 8px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
       <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
         <span id="banner-sync-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
-        <span style="color: #fff; font-weight: 700;">Sincronización en la Nube Firestore:</span>
-        <span id="banner-sync-text" style="color: var(--text-muted);">Conectado. Tus datos se sincronizan automáticamente en tiempo real.</span>
+        <span style="color: #fff; font-weight: 700;">Nube Firestore:</span>
+        <span id="banner-sync-text" style="color: var(--text-muted);">Sincronización activa</span>
       </div>
-      <button onclick="openSyncModal()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; color: var(--primary);">
+      <button onclick="openSyncModal()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 9px; color: var(--primary);">
         Cambiar Cuenta
       </button>
     </div>
@@ -995,16 +994,27 @@
     <!-- ============================================== -->
     <div id="tab-content-dashboard">
 
+      <!-- Discrepancy / Descuadre Notice Banner -->
+      <div id="capital-mismatch-banner" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div>
+            <div style="font-weight: 800; font-size: 13px; color: #fff;">Aviso de Descuadre en Capital Pendiente</div>
+            <div id="capital-mismatch-text" style="font-size: 12px; color: #fca5a5;">Diferencia entre las amortizaciones acumuladas de los meses y la última revisión del banco.</div>
+          </div>
+        </div>
+        <button onclick="switchTab('revisions')" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.4); font-size: 11px;">
+          Ver Revisiones
+        </button>
+      </div>
+
       <!-- Banner de inicio limpio cuando no hay meses registrados -->
       <div id="empty-state-banner" style="display: none; background: rgba(59, 130, 246, 0.08); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 20px; text-align: center;">
-        <div style="font-weight: 800; font-size: 16px; color: #fff; margin-bottom: 6px;">Histórico vacío / Listo para tus propios datos</div>
-        <div style="font-size: 13px; color: var(--text-muted); max-width: 580px; margin: 0 auto 16px;">
-          Actualmente no hay ninguna mensualidad guardada. Pulsa el botón verde para registrar el primer mes de Laura (ingreso, hipoteca y gastos del piso) o restablece los datos originales si lo deseas.
-        </div>
+        <div style="font-weight: 800; font-size: 15px; color: #fff; margin-bottom: 12px;">Histórico vacío</div>
         <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
           <button onclick="openModal()" class="btn btn-primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            + Registrar Primer Mes de Laura
+            + Registrar Primer Mes
           </button>
           <button onclick="resetToExcelOriginal()" class="btn btn-secondary btn-sm" style="color: var(--text-muted);">
             Cargar Datos Ejemplo Excel
@@ -1022,9 +1032,9 @@
           </div>
           <div id="kpi-acc-balance" class="kpi-num" style="color: var(--text-muted); font-size: 24px;">0,00 €</div>
           <div class="kpi-desc">
-            Desfase último mes: <strong id="kpi-month-gap" style="color: var(--text-muted);">0,00 €</strong>
+            Último mes: <strong id="kpi-month-gap" style="color: var(--text-muted);">0,00 €</strong>
             <br>
-            <span id="kpi-balance-status" style="color: var(--text-muted); font-size: 10px;">Sin meses registrados todavía</span>
+            <span id="kpi-balance-status" style="color: var(--text-muted); font-size: 10px;">Sin meses registrados</span>
           </div>
         </div>
 
@@ -1036,7 +1046,7 @@
           </div>
           <div id="kpi-laura-total-expenses" class="kpi-num">0,00 €</div>
           <div class="kpi-desc">
-            Ingreso Laura: <strong id="kpi-laura-deposit" style="color: #fff;">0,00 €</strong>
+            Ingreso: <strong id="kpi-laura-deposit" style="color: #fff;">0,00 €</strong>
             <br>
             <span>Hipot. <strong id="kpi-exp-hip">0,00 €</strong> + Com. <strong id="kpi-exp-com">0,00 €</strong> + Luz <strong id="kpi-exp-luz">0,00 €</strong></span>
           </div>
@@ -1050,9 +1060,9 @@
           </div>
           <div id="kpi-fee-laura" class="kpi-num" style="color: var(--purple);">0,00 €</div>
           <div class="kpi-desc">
-            Cuota Banco: <strong id="kpi-total-fee" style="color: #fff;">0,00 €</strong> (Laura 32,27%)
+            Recibo Banco: <strong id="kpi-total-fee" style="color: #fff;">0,00 €</strong>
             <br>
-            <span>Rak aporta: <strong id="kpi-fee-rak">0,00 €</strong> (67,73%)</span>
+            <span>Rak aporta: <strong id="kpi-fee-rak">0,00 €</strong></span>
           </div>
         </div>
 
@@ -1075,17 +1085,12 @@
       <!-- Co-owners Agreement Card -->
       <div class="agreement-box">
         <div class="agreement-top">
-          <div>
-            <div style="font-weight: 800; font-size: 15px; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <span>Acuerdo de Reparto entre Copropietarios</span>
-              <button onclick="openAgreementModal()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; border-color: rgba(255,255,255,0.2);">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                Editar Acuerdo
-              </button>
-            </div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-              Reparto porcentual de la cuota bancaria e importes pendientes.
-            </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 800; font-size: 15px; color: #fff;">Acuerdo de Reparto</span>
+            <button onclick="openAgreementModal()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; border-color: rgba(255,255,255,0.2);">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              Editar
+            </button>
           </div>
           <div class="debt-badge-row">
             <div class="debt-pill">
@@ -1112,16 +1117,11 @@
       <!-- Cuadros de las 3 Revisiones Anuales (Desde 11/2022) -->
       <div class="agreement-box" style="margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-          <div>
-            <div style="font-weight: 800; font-size: 15px; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <span>3 Revisiones de la Hipoteca por Año</span>
-              <span class="badge-pill" style="font-size: 10px;">Año Hipotecario: 30 Nov - 30 Nov</span>
-            </div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-              Cada año hipotecario inicia el 30 de Noviembre (cuota Diciembre). A la derecha de la hoja desde 11/2022: cuota completa vs. parte de Laura (~32,xx%).
-            </div>
+          <div style="font-weight: 800; font-size: 15px; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <span>3 Revisiones de la Hipoteca por Año</span>
+            <span class="badge-pill" style="font-size: 10px;">30 Nov - 30 Nov</span>
           </div>
-          <div style="font-size: 11px; color: var(--text-dim);">Recálculo según capital pendiente</div>
+          <button onclick="switchTab('revisions')" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px;">Gestionar Periodos</button>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
@@ -1131,10 +1131,10 @@
               <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--primary); letter-spacing: 0.5px;">1. Rev. 30 Noviembre</span>
               <span style="font-size: 10px; background: rgba(16, 185, 129, 0.2); color: var(--primary); padding: 2px 7px; border-radius: 9999px; font-weight: 700;">Aplica Dic - Ene</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Completa Banco:</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Banco:</div>
             <div id="rev1-full-fee" style="font-size: 18px; font-weight: 800; color: #fff;">0,00 €</div>
             <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 8px 0; padding-top: 8px; display: flex; justify-content: space-between; font-size: 12px;">
-              <span style="color: var(--primary); font-weight: 700;">Laura (~32,27%): <span id="rev1-laura-fee">0,00 €</span></span>
+              <span style="color: var(--primary); font-weight: 700;">Laura: <span id="rev1-laura-fee">0,00 €</span></span>
               <span style="color: var(--purple); font-weight: 700;">Rak: <span id="rev1-rak-fee">0,00 €</span></span>
             </div>
           </div>
@@ -1145,10 +1145,10 @@
               <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--amber); letter-spacing: 0.5px;">2. Rev. 1 Febrero</span>
               <span style="font-size: 10px; background: rgba(245, 158, 11, 0.2); color: var(--amber); padding: 2px 7px; border-radius: 9999px; font-weight: 700;">Aplica Feb - Jul</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Completa Banco:</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Banco:</div>
             <div id="rev2-full-fee" style="font-size: 18px; font-weight: 800; color: #fff;">0,00 €</div>
             <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 8px 0; padding-top: 8px; display: flex; justify-content: space-between; font-size: 12px;">
-              <span style="color: var(--primary); font-weight: 700;">Laura (~32,27%): <span id="rev2-laura-fee">0,00 €</span></span>
+              <span style="color: var(--primary); font-weight: 700;">Laura: <span id="rev2-laura-fee">0,00 €</span></span>
               <span style="color: var(--purple); font-weight: 700;">Rak: <span id="rev2-rak-fee">0,00 €</span></span>
             </div>
           </div>
@@ -1159,10 +1159,10 @@
               <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--purple); letter-spacing: 0.5px;">3. Rev. 1 Agosto</span>
               <span style="font-size: 10px; background: rgba(139, 92, 246, 0.2); color: var(--purple); padding: 2px 7px; border-radius: 9999px; font-weight: 700;">Aplica Ago - Nov</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Completa Banco:</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Cuota Banco:</div>
             <div id="rev3-full-fee" style="font-size: 18px; font-weight: 800; color: #fff;">0,00 €</div>
             <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin: 8px 0; padding-top: 8px; display: flex; justify-content: space-between; font-size: 12px;">
-              <span style="color: var(--primary); font-weight: 700;">Laura (~32,27%): <span id="rev3-laura-fee">0,00 €</span></span>
+              <span style="color: var(--primary); font-weight: 700;">Laura: <span id="rev3-laura-fee">0,00 €</span></span>
               <span style="color: var(--purple); font-weight: 700;">Rak: <span id="rev3-rak-fee">0,00 €</span></span>
             </div>
           </div>
@@ -1174,10 +1174,7 @@
         <!-- Chart 1: Curva de Amortización -->
         <div class="chart-panel">
           <div class="chart-heading">
-            <div>
-              <div style="font-weight: 700; font-size: 14px; color: #fff;">Evolución del Capital Pendiente</div>
-              <div style="font-size: 12px; color: var(--text-muted);">Curva histórica de amortización y saldo</div>
-            </div>
+            <div style="font-weight: 700; font-size: 14px; color: #fff;">Evolución del Capital Pendiente</div>
             <span class="badge-pill">2020 - 2026</span>
           </div>
           <div class="chart-canvas-box">
@@ -1188,10 +1185,7 @@
         <!-- Chart 2: Desglose Mensual -->
         <div class="chart-panel">
           <div class="chart-heading">
-            <div>
-              <div style="font-weight: 700; font-size: 14px; color: #fff;">Desglose Cuota: Capital vs Intereses</div>
-              <div style="font-size: 12px; color: var(--text-muted);">Últimas 12 mensualidades</div>
-            </div>
+            <div style="font-weight: 700; font-size: 14px; color: #fff;">Desglose Cuota: Capital vs Intereses</div>
             <div style="display: flex; gap: 10px; font-size: 11px;">
               <span style="color: var(--primary); font-weight: 600;">■ Capital</span>
               <span style="color: var(--amber); font-weight: 600;">■ Intereses</span>
@@ -1242,7 +1236,7 @@
           <thead>
             <tr>
               <th>Periodo</th>
-              <th>Revisión Aplicada</th>
+              <th>Revisión</th>
               <th style="color: var(--primary);">Ingreso Laura</th>
               <th style="color: var(--primary);">Cuota Laura</th>
               <th style="color: var(--purple);">Cuota Rak</th>
@@ -1250,7 +1244,8 @@
               <th>Luz</th>
               <th style="color: var(--amber);">Derramas</th>
               <th>Seguro / IBI</th>
-              <th>Otros Extra</th>
+              <th>Otros</th>
+              <th style="color: #38bdf8; font-weight: 700;">Desc. Laura a Rak</th>
               <th style="color: #f43f5e; font-weight: 700;">Total Gastos Laura</th>
               <th>Desfase Mes</th>
               <th style="color: var(--primary); font-weight: 800;">Desfase Acumulado</th>
@@ -1271,19 +1266,14 @@
     <!-- ============================================== -->
     <div id="tab-content-revisions" style="display: none;">
       <div class="sim-card">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
-          <div>
-            <h2 style="font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-              Periodos de Revisión de Cuota Hipotecaria
-            </h2>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
-              Gestiona los recálculos del banco (Noviembre, Febrero, Julio...) con su capital pendiente, recibo, intereses y el % que le corresponde a Laura. Al registrar o calcular los meses, la app aplicará automáticamente las cifras de su periodo correspondiente.
-            </p>
-          </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+          <h2 style="font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+            Periodos de Revisión de Cuota
+          </h2>
           <button onclick="openRevisionModal()" class="btn btn-primary btn-sm">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            + Añadir Periodo de Revisión
+            + Añadir Periodo
           </button>
         </div>
 
@@ -1319,10 +1309,7 @@
     <!-- ============================================== -->
     <div id="tab-content-settings" style="display: none;">
       <div class="sim-card">
-        <h2 style="font-size: 17px; font-weight: 800; color: #fff;">Parámetros del Préstamo y Cotitulares</h2>
-        <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
-          Configuración base para el recálculo dinámico de intereses y amortización.
-        </p>
+        <h2 style="font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 12px;">Parámetros del Préstamo y Copropietarios</h2>
 
         <form id="loan-settings-form" onsubmit="saveSettingsHandler(event)">
           <div class="form-grid">
@@ -1363,47 +1350,38 @@
       </div>
 
       <div class="sim-card">
-        <h3 style="font-size: 15px; font-weight: 700; color: #fff;">Copia de Seguridad y Migración</h3>
-        <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px; margin-bottom: 14px;">
-          Descarga tus datos en formato JSON o CSV para abrir en Excel o restaurar en cualquier dispositivo.
-        </p>
+        <h3 style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 12px;">Copia de Seguridad y Migración</h3>
 
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
           <button onclick="exportDataJSON()" class="btn btn-secondary btn-sm">Exportar JSON</button>
-          <button onclick="exportDataCSV()" class="btn btn-secondary btn-sm">Exportar CSV (Excel)</button>
+          <button onclick="exportDataCSV()" class="btn btn-secondary btn-sm">Exportar CSV</button>
           <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm">Importar JSON</button>
           <input type="file" id="import-file-input" onchange="importDataJSON(event)" style="display: none;" accept=".json">
           <button onclick="clearAllData()" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.1);">
-            Borrar Todo y Empezar de Cero
+            Borrar Todo
           </button>
           <button onclick="resetToExcelOriginal()" class="btn btn-secondary btn-sm" style="color: var(--text-muted); border-color: var(--border-color);">
-            Restablecer Datos Excel Original
+            Restablecer Ejemplo Excel
           </button>
         </div>
       </div>
 
       <!-- Firebase Cloud Setup Card (Igual a Seguimiento Solar) -->
       <div class="sim-card" id="firebase-settings-card">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h3 style="font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
-              Sincronización en la Nube con Firestore (Multidispositivo)
-            </h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
-              Tus datos se sincronizan automáticamente en tiempo real entre tu móvil y tu ordenador con tu identificador.
-            </p>
-          </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+          <h3 style="font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+            Sincronización en la Nube Firestore
+          </h3>
           <div id="settings-sync-badge" style="font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: var(--primary); border: 1px solid rgba(16, 185, 129, 0.3);">
-            Conectado a Firestore
+            Conectado
           </div>
         </div>
 
         <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div>
-            <div style="font-size: 11px; color: var(--text-muted);">Identificador / Cuenta activa:</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Cuenta activa:</div>
             <div id="settings-sync-account-label" style="font-size: 15px; font-weight: 800; color: #84cc16; margin-top: 2px;">mi_sistema_hipoteca</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Cualquier dispositivo que introduzca este identificador tendrá tus mismos datos sincronizados.</div>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button onclick="openSyncModal()" class="btn btn-primary btn-sm">Cambiar Cuenta</button>
@@ -1521,11 +1499,11 @@
           </div>
         </div>
 
-        <!-- Bloque Gastos del Piso y Desfase -->
+        <!-- Bloque Gastos del Piso y Aportaciones -->
         <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;">
-          <div style="font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 8px;">2. Gastos del Piso (Arrastrados) & Aportación</div>
+          <div style="font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 10px;">2. Gastos del Piso y Aportaciones</div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div class="form-field">
               <label>Comunidad (€):</label>
               <input type="number" step="0.01" id="p-community" oninput="updateLiveModalSummary()" class="form-input">
@@ -1534,32 +1512,39 @@
               <label>Luz (€):</label>
               <input type="number" step="0.01" id="p-electricity" oninput="updateLiveModalSummary()" class="form-input">
             </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div class="form-field">
               <label style="color: var(--amber);">Derramas (€):</label>
               <input type="number" step="0.01" id="p-derramas" value="0.00" oninput="updateLiveModalSummary()" class="form-input">
+            </div>
+            <div class="form-field">
+              <label>Seguro / IBI (€):</label>
+              <input type="number" step="0.01" id="p-insurance-ibi" oninput="updateLiveModalSummary()" value="0.00" class="form-input">
             </div>
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div class="form-field">
-              <label>Seguro / IBI (€):</label>
-              <input type="number" step="0.01" id="p-insurance-ibi" oninput="updateLiveModalSummary()" value="0.00" class="form-input">
+              <label>Otros Gastos (€):</label>
+              <input type="number" step="0.01" id="p-other-extra" oninput="updateLiveModalSummary()" value="0.00" class="form-input">
             </div>
             <div class="form-field">
-              <label>Otros Gastos Extra (€):</label>
-              <input type="number" step="0.01" id="p-other-extra" oninput="updateLiveModalSummary()" value="0.00" class="form-input">
+              <label style="color: #38bdf8; font-weight: 700;">Descontar Capital Laura a Rak (€):</label>
+              <input type="number" step="0.01" id="p-laura-extra-amort" oninput="updateLiveModalSummary()" value="0.00" class="form-input" placeholder="0.00">
             </div>
           </div>
 
           <div class="form-field">
-            <label style="color: var(--primary); font-weight: 700;">Ingreso / Aportación mensual de Laura (€):</label>
+            <label style="color: var(--primary); font-weight: 700;">Ingreso mensual de Laura (€):</label>
             <input type="number" step="0.01" id="p-deposit" oninput="updateLiveModalSummary()" class="form-input" style="font-size: 15px; font-weight: 800; color: var(--primary);">
           </div>
         </div>
 
         <div class="form-field" style="margin-bottom: 14px;">
-          <label>Concepto / Notas:</label>
-          <input type="text" id="p-notes" class="form-input" placeholder="ej. Cuota ordinaria + gastos">
+          <label>Notas:</label>
+          <input type="text" id="p-notes" class="form-input" placeholder="Notas del mes">
         </div>
 
         <!-- Resumen en vivo del mes -->
@@ -1600,7 +1585,7 @@
 
         <div class="form-field" style="margin-bottom: 12px;">
           <label>Nombre del Periodo:</label>
-          <input type="text" id="rev-name" class="form-input" placeholder="ej. Revisión Noviembre 2020" required>
+          <input type="text" id="rev-name" class="form-input" placeholder="ej. Revisión Noviembre 2024" required>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
@@ -1656,7 +1641,7 @@
 
         <!-- Caja de desglose automático calculado -->
         <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 14px; font-size: 12px;">
-          <div style="font-weight: 700; color: #fff; margin-bottom: 6px;">Desglose Calculado para este Periodo:</div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 6px;">Desglose Calculado:</div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; color: var(--text-muted);">
             <div>Cuota Laura: <strong id="rev-prev-laura-fee" style="color: var(--primary);">0,00 €</strong></div>
             <div>Cuota Rak: <strong id="rev-prev-rak-fee" style="color: var(--purple);">0,00 €</strong></div>
@@ -1682,15 +1667,11 @@
   <div id="agreement-modal" class="modal-backdrop">
     <div class="modal-sheet">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">Editar Acuerdo entre Copropietarios</h3>
+        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">Editar Acuerdo</h3>
         <button onclick="closeAgreementModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
       </div>
 
       <form onsubmit="submitAgreementHandler(event)">
-        <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted);">
-          Ningún campo es obligatorio. El <strong style="color: var(--primary);">% de Laura</strong> calcula automáticamente su parte de la cuota del banco y los gastos para cada mes. El % de Rak se ajusta solo.
-        </div>
-
         <div class="form-grid" style="margin-bottom: 14px;">
           <div class="form-field">
             <label style="color: var(--primary);">% Reparto Laura (%):</label>
@@ -1701,11 +1682,11 @@
             <input type="number" step="0.01" id="agree-pct-rak" class="form-input" oninput="syncAgreementPercentages('rak')" placeholder="Ej: 67.73">
           </div>
           <div class="form-field">
-            <label>Pnd. Pago a Laura (€, opcional):</label>
+            <label>Pnd. Pago a Laura (€):</label>
             <input type="number" step="0.01" id="agree-debt-laura" class="form-input" oninput="syncAgreementDebts()" placeholder="0.00">
           </div>
           <div class="form-field">
-            <label>Pnd. Pago a Rak (€, opcional):</label>
+            <label>Pnd. Pago a Rak (€):</label>
             <input type="number" step="0.01" id="agree-debt-rak" class="form-input" oninput="syncAgreementDebts()" placeholder="0.00">
           </div>
         </div>
@@ -1742,16 +1723,12 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#84cc16" stroke-width="2.2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
             <span>Correo o Identificador</span>
           </div>
-          <span id="sync-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4);">
+          <span id="sync-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; background: rgba(245, 158, 11, 0.15); color: #fcd34d;">
             Sistema base
           </span>
         </div>
 
-        <p style="font-size: 12px; color: #8ca48a; margin: 0 0 14px 0; line-height: 1.45;">
-          Introduce tu correo electrónico (ej. <strong style="color: #e2e8f0;">ferjrm@hotmail.com</strong>) o tu código. Tus dispositivos que usen este identificador sincronizarán los datos automáticamente.
-        </p>
-
-        <form onsubmit="handleSyncConnect(event)" style="display: flex; gap: 8px;">
+        <form onsubmit="handleSyncConnect(event)" style="display: flex; gap: 8px; margin-top: 10px;">
           <div style="position: relative; flex: 1;">
             <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-1-1l-3 3m2 2l-2 2m-7-1a5 5 0 1 1-7-7 5 5 0 0 1 7 7zm0 0l7 7v3h3v-3l-7-7z"></path></svg>
