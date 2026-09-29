@@ -135,38 +135,74 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function loadStateFromStorage() {
   try {
-    const storedCfg = localStorage.getItem('hipoteca_cfg_v7');
-    if (storedCfg) settings = { ...settings, ...JSON.parse(storedCfg) };
-
-    const storedRevs = localStorage.getItem('hipoteca_revs_v7');
-    if (storedRevs) {
-      const parsedRevs = JSON.parse(storedRevs);
-      if (Array.isArray(parsedRevs) && parsedRevs.length > 0) revisions = parsedRevs;
+    // 1. Recover Settings across all known versions
+    const cfgKeys = ['hipoteca_cfg_v7', 'hipoteca_cfg_v6', 'hipoteca_cfg_v5', 'hipoteca_cfg_v4', 'hipoteca_cfg_v3', 'hipoteca_cfg_v2', 'hipoteca_cfg_v1', 'hipoteca_cfg', 'hipoteca_settings'];
+    for (const k of cfgKeys) {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (parsed && typeof parsed === 'object') {
+            settings = { ...settings, ...parsed };
+            break;
+          }
+        } catch(e) {}
+      }
     }
 
-    const storedPayments = localStorage.getItem('hipoteca_payments_v7');
-    if (storedPayments) {
-      const parsed = JSON.parse(storedPayments);
-      if (Array.isArray(parsed) && parsed.length > 0) payments = parsed;
-      else payments = getOriginalExcelSeed();
-    } else {
-      // Check for v6 migration
-      const prevPayments = localStorage.getItem('hipoteca_payments_v6');
-      if (prevPayments) payments = JSON.parse(prevPayments);
-      else payments = getOriginalExcelSeed();
-      saveStateToStorage();
+    // 2. Recover Revisions across all known versions
+    const revKeys = ['hipoteca_revs_v7', 'hipoteca_revs_v6', 'hipoteca_revs_v5', 'hipoteca_revs_v4', 'hipoteca_revs_v3', 'hipoteca_revs_v2', 'hipoteca_revs_v1', 'hipoteca_revs', 'hipoteca_revisions', 'revisions'];
+    for (const k of revKeys) {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            revisions = parsed;
+            break;
+          }
+        } catch(e) {}
+      }
+    }
+
+    // 3. Recover Payments across all known versions
+    let loadedPayments = false;
+    const payKeys = ['hipoteca_payments_v7', 'hipoteca_payments_v6', 'hipoteca_payments_v5', 'hipoteca_payments_v4', 'hipoteca_payments_v3', 'hipoteca_payments_v2', 'hipoteca_payments_v1', 'hipoteca_payments', 'mortgage_payments', 'payments'];
+    for (const k of payKeys) {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            payments = parsed;
+            loadedPayments = true;
+            break;
+          }
+        } catch(e) {}
+      }
+    }
+
+    if (!loadedPayments) {
+      payments = getOriginalExcelSeed();
     }
   } catch (err) {
-    payments = getOriginalExcelSeed();
+    console.warn("Storage loading notice:", err);
   }
   recomputeBalances();
 }
 
 function saveStateToStorage() {
   try {
-    localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
-    localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
-    localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
+    const cfgStr = JSON.stringify(settings);
+    const revStr = JSON.stringify(revisions);
+    const payStr = JSON.stringify(payments);
+
+    localStorage.setItem('hipoteca_cfg_v7', cfgStr);
+    localStorage.setItem('hipoteca_cfg_v6', cfgStr);
+    localStorage.setItem('hipoteca_revs_v7', revStr);
+    localStorage.setItem('hipoteca_revs_v6', revStr);
+    localStorage.setItem('hipoteca_payments_v7', payStr);
+    localStorage.setItem('hipoteca_payments_v6', payStr);
   } catch (err) {}
   syncToFirestoreIfAvailable();
 }
@@ -1457,27 +1493,38 @@ function connectFirestoreSync(key) {
     firestoreUnsubscribe = onSnapshot(docRef, docSnap => {
       if (docSnap && docSnap.exists()) {
         const data = docSnap.data();
-        if (data && data.updatedAt) {
-          const localTime = Number(localStorage.getItem('hipoteca_last_sync_time') || 0);
-          if (data.updatedAt > localTime) {
-            isSyncingIncoming = true;
-            if (data.settings) settings = { ...settings, ...data.settings };
-            if (Array.isArray(data.revisions) && data.revisions.length > 0) revisions = data.revisions;
-            if (Array.isArray(data.payments)) payments = data.payments;
-            
-            localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
-            try {
-              localStorage.setItem('hipoteca_cfg_v7', JSON.stringify(settings));
-              localStorage.setItem('hipoteca_revs_v7', JSON.stringify(revisions));
-              localStorage.setItem('hipoteca_payments_v7', JSON.stringify(payments));
-            } catch(e) {}
-
-            recomputeBalances();
-            updateDashboardUI();
-            isSyncingIncoming = false;
+        if (data) {
+          isSyncingIncoming = true;
+          if (data.settings) settings = { ...settings, ...data.settings };
+          if (Array.isArray(data.revisions) && data.revisions.length > 0) {
+            revisions = data.revisions;
           }
+          if (Array.isArray(data.payments) && data.payments.length > 0) {
+            payments = data.payments;
+          }
+          
+          if (data.updatedAt) {
+            localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
+          }
+
+          try {
+            const cfgStr = JSON.stringify(settings);
+            const revStr = JSON.stringify(revisions);
+            const payStr = JSON.stringify(payments);
+            localStorage.setItem('hipoteca_cfg_v7', cfgStr);
+            localStorage.setItem('hipoteca_cfg_v6', cfgStr);
+            localStorage.setItem('hipoteca_revs_v7', revStr);
+            localStorage.setItem('hipoteca_revs_v6', revStr);
+            localStorage.setItem('hipoteca_payments_v7', payStr);
+            localStorage.setItem('hipoteca_payments_v6', payStr);
+          } catch(e) {}
+
+          recomputeBalances();
+          updateDashboardUI();
+          isSyncingIncoming = false;
         }
       } else {
+        // Document does not exist in cloud yet for this key, sync our local data up
         syncToFirestoreIfAvailable(true);
       }
     }, err => {
