@@ -938,17 +938,16 @@
       </div>
     </header>
 
-    <!-- Cloud Sync Status Banner -->
-    <div class="sync-strip">
-      <div class="sync-left">
-        <div class="pulse-dot"></div>
-        <span style="color: var(--text-muted);">Sincronización compartida:</span>
-        <span id="sync-code-label" class="sync-code-tag">hipoteca_familia_2026</span>
+    <!-- Privacy & Local Storage Badge -->
+    <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 8px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <span style="color: #fff; font-weight: 600;">Modo Privado & Autónomo:</span>
+        <span style="color: var(--text-muted);">Tus datos se guardan exclusivamente en la memoria de tu dispositivo. Nadie con la URL pública de GitHub puede verlos.</span>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <button onclick="copySyncCode()" class="btn btn-secondary btn-sm">Copiar Clave</button>
-        <button onclick="switchTab('settings')" class="btn btn-secondary btn-sm" style="color: var(--primary);">Configurar</button>
-      </div>
+      <button onclick="switchTab('settings')" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 9px;">
+        Copia de Seguridad
+      </button>
     </div>
 
     <!-- ============================================== -->
@@ -1334,10 +1333,6 @@
             <div class="form-field">
               <label>Tipo de Interés Anual (%):</label>
               <input type="number" step="0.01" id="cfg-interest-rate" class="form-input">
-            </div>
-            <div class="form-field">
-              <label>Clave Sincronización en la Nube:</label>
-              <input type="text" id="cfg-sync-id" class="form-input" style="font-family: monospace; color: var(--primary);">
             </div>
             <div class="form-field">
               <label>% Reparto Hipoteca Laura (%):</label>
@@ -1845,7 +1840,6 @@
 
       document.getElementById('val-debt-laura').textContent = fmt(settings.internalDebtLaura || 0);
       document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak || 0);
-      document.getElementById('sync-code-label').textContent = settings.sharedSyncCode;
 
       renderHistoryTable();
       drawFinancialCharts();
@@ -2284,7 +2278,6 @@
       document.getElementById('cfg-capital-init').value = settings.initialCapital || '';
       document.getElementById('cfg-term-years').value = settings.totalTermYears || '';
       document.getElementById('cfg-interest-rate').value = settings.annualInterestRate || '';
-      document.getElementById('cfg-sync-id').value = settings.sharedSyncCode || '';
       if (document.getElementById('cfg-laura-pct')) document.getElementById('cfg-laura-pct').value = settings.coOwner1Percentage || 32.27;
       if (document.getElementById('cfg-rak-pct')) document.getElementById('cfg-rak-pct').value = settings.coOwner2Percentage || 67.73;
       document.getElementById('cfg-laura-debt').value = settings.internalDebtLaura || '';
@@ -2296,7 +2289,6 @@
       const cap = document.getElementById('cfg-capital-init').value.trim();
       const term = document.getElementById('cfg-term-years').value.trim();
       const rate = document.getElementById('cfg-interest-rate').value.trim();
-      const syncId = document.getElementById('cfg-sync-id').value.trim();
       const lPct = document.getElementById('cfg-laura-pct') ? document.getElementById('cfg-laura-pct').value.trim() : '';
       const rPct = document.getElementById('cfg-rak-pct') ? document.getElementById('cfg-rak-pct').value.trim() : '';
       const lDebt = document.getElementById('cfg-laura-debt').value.trim();
@@ -2305,7 +2297,6 @@
       if (cap !== "") settings.initialCapital = Number(cap) || settings.initialCapital;
       if (term !== "") settings.totalTermYears = Number(term) || settings.totalTermYears;
       if (rate !== "") settings.annualInterestRate = Number(rate) || settings.annualInterestRate;
-      if (syncId !== "") settings.sharedSyncCode = syncId;
       if (lPct !== "") settings.coOwner1Percentage = Number(lPct) || 32.27;
       if (rPct !== "") settings.coOwner2Percentage = Number(rPct) || (100 - settings.coOwner1Percentage);
       settings.internalDebtLaura = lDebt !== "" ? Number(lDebt) : 0;
@@ -2446,14 +2437,6 @@
         updateDashboardUI();
         showToast("Datos originales del Excel restaurados");
       }
-    }
-
-    function copySyncCode() {
-      navigator.clipboard.writeText(settings.sharedSyncCode).then(() => {
-        showToast("Clave de sincronización copiada");
-      }).catch(() => {
-        showToast("Clave: " + settings.sharedSyncCode);
-      });
     }
 
     function showToast(msg) {
