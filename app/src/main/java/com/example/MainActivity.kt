@@ -3,7 +3,9 @@ package com.example
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -62,6 +64,9 @@ fun WebContainer(
                 )
                 setBackgroundColor(Color.parseColor("#090d16"))
 
+                // Use software layer to prevent emulator Mesa DRI render node failure
+                setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
@@ -80,11 +85,15 @@ fun WebContainer(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        // Page fully loaded
                     }
                 }
 
-                webChromeClient = WebChromeClient()
+                webChromeClient = object : WebChromeClient() {
+                    override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                        android.util.Log.d("WebViewConsole", "${consoleMessage?.message()} -- Line ${consoleMessage?.lineNumber()}")
+                        return true
+                    }
+                }
 
                 loadUrl("file:///android_asset/www/index.html")
                 onWebViewCreated(this)
