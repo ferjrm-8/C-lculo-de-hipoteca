@@ -1206,7 +1206,10 @@
         <div class="chart-panel">
           <div class="chart-heading">
             <div style="font-weight: 700; font-size: 14px; color: #fff;">Evolución del Capital Pendiente</div>
-            <span class="badge-pill">2020 - 2026</span>
+            <div style="display: flex; gap: 10px; font-size: 11px;">
+              <span style="color: var(--primary); font-weight: 600;">■ Deuda Laura</span>
+              <span style="color: var(--purple); font-weight: 600;">■ Total Préstamo</span>
+            </div>
           </div>
           <div class="chart-canvas-box">
             <canvas id="amortCurveCanvas"></canvas>
@@ -1716,37 +1719,53 @@
     </div>
   </div>
 
-  <!-- Modal Editar Acuerdo entre Propietarios -->
+  <!-- Modal Ajustar Capital Inicial y Reparto -->
   <div id="agreement-modal" class="modal-backdrop">
-    <div class="modal-sheet">
+    <div class="modal-sheet" style="max-width: 480px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-        <h3 style="font-size: 16px; font-weight: 800; color: #fff;">Editar Acuerdo</h3>
+        <div>
+          <h3 style="font-size: 16px; font-weight: 800; color: #fff; margin: 0;">Ajustar Capital Inicial (Nov 2020)</h3>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Configuración de partida del préstamo y deuda de cada titular</div>
+        </div>
         <button onclick="closeAgreementModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
       </div>
 
       <form onsubmit="submitAgreementHandler(event)">
-        <div class="form-grid" style="margin-bottom: 14px;">
+        <div class="form-field" style="margin-bottom: 12px;">
+          <label>Capital Inicial Total Hipoteca (€):</label>
+          <input type="number" step="0.01" id="agree-init-capital" class="form-input" oninput="onAgreementCapitalChange('total')" style="font-weight: 800; color: #fff; font-size: 15px;" placeholder="121766.32" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
           <div class="form-field">
-            <label style="color: var(--primary);">% Reparto Laura (%):</label>
-            <input type="number" step="0.01" id="agree-pct-laura" class="form-input" oninput="syncAgreementPercentages('laura')" placeholder="Ej: 32.27">
+            <label style="color: var(--primary);">Capital Inicial Laura (€):</label>
+            <input type="number" step="0.01" id="agree-debt-laura" class="form-input" oninput="onAgreementCapitalChange('laura')" style="font-weight: 700; color: var(--primary);" placeholder="53500.00" required>
           </div>
           <div class="form-field">
-            <label style="color: var(--purple);">% Reparto Rak (%):</label>
-            <input type="number" step="0.01" id="agree-pct-rak" class="form-input" oninput="syncAgreementPercentages('rak')" placeholder="Ej: 67.73">
-          </div>
-          <div class="form-field">
-            <label>Pnd. Pago a Laura (€):</label>
-            <input type="number" step="0.01" id="agree-debt-laura" class="form-input" oninput="syncAgreementDebts()" placeholder="0.00">
-          </div>
-          <div class="form-field">
-            <label>Pnd. Pago a Rak (€):</label>
-            <input type="number" step="0.01" id="agree-debt-rak" class="form-input" oninput="syncAgreementDebts()" placeholder="0.00">
+            <label style="color: var(--purple);">Capital Inicial Rak (€):</label>
+            <input type="number" step="0.01" id="agree-debt-rak" class="form-input" oninput="onAgreementCapitalChange('rak')" style="font-weight: 700; color: var(--purple);" placeholder="68266.32" required>
           </div>
         </div>
 
-        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+          <div class="form-field">
+            <label style="color: var(--primary);">% Inicial Laura (%):</label>
+            <input type="number" step="0.01" id="agree-pct-laura" class="form-input" readonly style="background: rgba(16, 185, 129, 0.08); color: var(--primary); font-weight: 700;">
+          </div>
+          <div class="form-field">
+            <label style="color: var(--purple);">% Inicial Rak (%):</label>
+            <input type="number" step="0.01" id="agree-pct-rak" class="form-input" readonly style="background: rgba(139, 92, 246, 0.08); color: var(--purple); font-weight: 700;">
+          </div>
+        </div>
+
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--border-color); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 14px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+          <span>Valores oficiales: <strong>121.766,32 €</strong> | Laura: <strong>53.500 €</strong> | Rak: <strong>68.266,32 €</strong></span>
+          <button type="button" onclick="resetAgreementToDefaults()" class="btn btn-secondary btn-sm" style="font-size: 10px; padding: 2px 7px;">Valores Base</button>
+        </div>
+
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
           <button type="button" onclick="closeAgreementModal()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar Acuerdo</button>
+          <button type="submit" class="btn btn-primary">Guardar e Irrigar Cálculos</button>
         </div>
       </form>
     </div>

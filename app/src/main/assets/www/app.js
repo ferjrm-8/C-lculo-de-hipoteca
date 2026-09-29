@@ -246,6 +246,15 @@ function loadStateFromStorage() {
       }
     }
 
+    // Sanitize any outdated 33k fallback to official 53.500 € for Laura
+    if (!settings.internalDebtLaura || Number(settings.internalDebtLaura) < 40000) {
+      settings.internalDebtLaura = 53500.00;
+      settings.internalDebtRak = 68266.32;
+      settings.initialCapital = 121766.32;
+      settings.coOwner1Percentage = 43.94;
+      settings.coOwner2Percentage = 56.06;
+    }
+
     // 2. Recover Revisions across all known versions
     const revKeys = ['hipoteca_revs_v7', 'hipoteca_revs_v6', 'hipoteca_revs_v5', 'hipoteca_revs_v4', 'hipoteca_revs_v3', 'hipoteca_revs_v2', 'hipoteca_revs_v1', 'hipoteca_revs', 'hipoteca_revisions', 'revisions'];
     for (const k of revKeys) {
@@ -422,7 +431,7 @@ function recomputeBalances() {
   payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
   let bal = Number(settings.initialCapital) || 121766.32;
-  let capLaura = (settings.internalDebtLaura && Number(settings.internalDebtLaura) > 0)
+  let capLaura = (settings.internalDebtLaura && Number(settings.internalDebtLaura) >= 40000)
     ? Number(settings.internalDebtLaura)
     : 53500.00;
 
@@ -677,7 +686,7 @@ function drawFinancialCharts() {
 }
 
 function drawEvolutionChart() {
-  const canvas = document.getElementById('amort-chart-canvas');
+  const canvas = document.getElementById('amortCurveCanvas') || document.getElementById('amort-chart-canvas');
   if (!canvas || !canvas.parentElement) return;
 
   const ctx = canvas.getContext('2d');
@@ -701,7 +710,7 @@ function drawEvolutionChart() {
   const pad = { top: 20, right: 15, bottom: 25, left: 45 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
-  const maxCap = Math.max(settings.initialCapital || 125000, ...payments.map(p => p.remaining || 0));
+  const maxCap = Math.max(Number(settings.initialCapital) || 125000, ...payments.map(p => p.remaining || 0));
 
   // Grid
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
@@ -720,7 +729,7 @@ function drawEvolutionChart() {
     ctx.fillText((val / 1000).toFixed(0) + 'k€', pad.left - 6, y + 3);
   }
 
-  // Draw Capital Curve
+  // Draw Total Bank Mortgage Line (Purple)
   ctx.beginPath();
   payments.forEach((p, idx) => {
     const x = pad.left + (idx / Math.max(1, payments.length - 1)) * plotW;
@@ -728,11 +737,23 @@ function drawEvolutionChart() {
     if (idx === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
+  ctx.strokeStyle = '#8b5cf6';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Draw Laura Pending Capital Line (Emerald)
+  ctx.beginPath();
+  payments.forEach((p, idx) => {
+    const x = pad.left + (idx / Math.max(1, payments.length - 1)) * plotW;
+    const y = pad.top + plotH - ((p.lauraRemaining || 0) / maxCap) * plotH;
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
   ctx.strokeStyle = '#10b981';
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  // Gradient fill
+  // Gradient fill for Laura curve
   const lastX = pad.left + plotW;
   const firstX = pad.left;
   const baseLine = pad.top + plotH;
@@ -740,14 +761,14 @@ function drawEvolutionChart() {
   ctx.lineTo(firstX, baseLine);
   ctx.closePath();
   const grad = ctx.createLinearGradient(0, pad.top, 0, baseLine);
-  grad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+  grad.addColorStop(0, 'rgba(16, 185, 129, 0.22)');
   grad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
   ctx.fillStyle = grad;
   ctx.fill();
 }
 
 function drawReceiptBreakdownChart() {
-  const canvas = document.getElementById('receipt-chart-canvas');
+  const canvas = document.getElementById('breakdownMonthlyCanvas') || document.getElementById('receipt-chart-canvas');
   if (!canvas || !canvas.parentElement) return;
 
   const ctx = canvas.getContext('2d');
@@ -1518,55 +1539,114 @@ function syncSettingsDebts() {
   }
 }
 
-function syncAgreementPercentages(source) {
+function onAgreementCapitalChange(source) {
+  const totInput = document.getElementById('agree-init-capital');
+  const lauraInput = document.getElementById('agree-debt-laura');
+  const rakInput = document.getElementById('agree-debt-rak');
+  const pctLInput = document.getElementById('agree-pct-laura');
+  const pctRInput = document.getElementById('agree-pct-rak');
+
+  let tot = Number(totInput?.value) || 0;
+  let lCap = Number(lauraInput?.value) || 0;
+  let rCap = Number(rakInput?.value) || 0;
+
   if (source === 'laura') {
-    const lPct = Number(document.getElementById('agree-pct-laura').value) || 0;
-    document.getElementById('agree-pct-rak').value = (100 - lPct).toFixed(2);
-  } else {
-    const rPct = Number(document.getElementById('agree-pct-rak').value) || 0;
-    document.getElementById('agree-pct-laura').value = (100 - rPct).toFixed(2);
+    if (tot > 0) {
+      rCap = Math.max(0, tot - lCap);
+      if (rakInput) rakInput.value = rCap.toFixed(2);
+    }
+  } else if (source === 'rak') {
+    if (tot > 0) {
+      lCap = Math.max(0, tot - rCap);
+      if (lauraInput) lauraInput.value = lCap.toFixed(2);
+    }
+  } else if (source === 'total') {
+    const pctL = Number(pctLInput?.value) || 43.94;
+    lCap = tot * (pctL / 100);
+    rCap = Math.max(0, tot - lCap);
+    if (lauraInput) lauraInput.value = lCap.toFixed(2);
+    if (rakInput) rakInput.value = rCap.toFixed(2);
+  }
+
+  if (tot > 0) {
+    const pctL = (lCap / tot) * 100;
+    const pctR = 100 - pctL;
+    if (pctLInput) pctLInput.value = pctL.toFixed(2);
+    if (pctRInput) pctRInput.value = pctR.toFixed(2);
   }
 }
 
-function syncAgreementDebts() {
-  const dL = Number(document.getElementById('agree-debt-laura').value) || 0;
-  const dR = Number(document.getElementById('agree-debt-rak').value) || 0;
-  const tot = dL + dR;
-  if (tot > 0) {
-    const lPct = (dL / tot) * 100;
-    document.getElementById('agree-pct-laura').value = lPct.toFixed(2);
-    document.getElementById('agree-pct-rak').value = (100 - lPct).toFixed(2);
-  }
+function resetAgreementToDefaults() {
+  const tot = 121766.32;
+  const lCap = 53500.00;
+  const rCap = 68266.32;
+  const pctL = (lCap / tot) * 100;
+  const pctR = 100 - pctL;
+
+  if (document.getElementById('agree-init-capital')) document.getElementById('agree-init-capital').value = tot.toFixed(2);
+  if (document.getElementById('agree-debt-laura')) document.getElementById('agree-debt-laura').value = lCap.toFixed(2);
+  if (document.getElementById('agree-debt-rak')) document.getElementById('agree-debt-rak').value = rCap.toFixed(2);
+  if (document.getElementById('agree-pct-laura')) document.getElementById('agree-pct-laura').value = pctL.toFixed(2);
+  if (document.getElementById('agree-pct-rak')) document.getElementById('agree-pct-rak').value = pctR.toFixed(2);
 }
 
 function openAgreementModal() {
-  document.getElementById('agree-name-laura').value = settings.coOwner1Name || "Laura";
-  document.getElementById('agree-name-rak').value = settings.coOwner2Name || "Rak";
-  document.getElementById('agree-pct-laura').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
-  document.getElementById('agree-pct-rak').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
-  document.getElementById('agree-debt-laura').value = (settings.internalDebtLaura || 33486).toFixed(2);
-  document.getElementById('agree-debt-rak').value = (settings.internalDebtRak || 68266).toFixed(2);
+  const initTot = Number(settings.initialCapital) || 121766.32;
+  const initL = (settings.internalDebtLaura && Number(settings.internalDebtLaura) >= 40000) 
+    ? Number(settings.internalDebtLaura) 
+    : 53500.00;
+  const initR = (settings.internalDebtRak && Number(settings.internalDebtRak) > 0) 
+    ? Number(settings.internalDebtRak) 
+    : Math.max(0, initTot - initL);
 
-  document.getElementById('agreement-modal').classList.add('active');
+  const pctL = initTot > 0 ? (initL / initTot) * 100 : 43.94;
+  const pctR = 100 - pctL;
+
+  if (document.getElementById('agree-init-capital')) document.getElementById('agree-init-capital').value = initTot.toFixed(2);
+  if (document.getElementById('agree-debt-laura')) document.getElementById('agree-debt-laura').value = initL.toFixed(2);
+  if (document.getElementById('agree-debt-rak')) document.getElementById('agree-debt-rak').value = initR.toFixed(2);
+  if (document.getElementById('agree-pct-laura')) document.getElementById('agree-pct-laura').value = pctL.toFixed(2);
+  if (document.getElementById('agree-pct-rak')) document.getElementById('agree-pct-rak').value = pctR.toFixed(2);
+
+  const modal = document.getElementById('agreement-modal');
+  if (modal) modal.classList.add('active');
 }
 
 function closeAgreementModal() {
-  document.getElementById('agreement-modal').classList.remove('active');
+  const modal = document.getElementById('agreement-modal');
+  if (modal) modal.classList.remove('active');
 }
 
 function submitAgreementHandler(e) {
-  e.preventDefault();
-  settings.coOwner1Name = document.getElementById('agree-name-laura').value || "Laura";
-  settings.coOwner2Name = document.getElementById('agree-name-rak').value || "Rak";
-  settings.coOwner1Percentage = Number(document.getElementById('agree-pct-laura').value) || 32.27;
-  settings.coOwner2Percentage = Number(document.getElementById('agree-pct-rak').value) || 67.73;
-  settings.internalDebtLaura = Number(document.getElementById('agree-debt-laura').value) || 0;
-  settings.internalDebtRak = Number(document.getElementById('agree-debt-rak').value) || 0;
+  if (e && e.preventDefault) e.preventDefault();
+  const tot = Number(document.getElementById('agree-init-capital')?.value) || 121766.32;
+  const lCap = Number(document.getElementById('agree-debt-laura')?.value) || 53500.00;
+  const rCap = Number(document.getElementById('agree-debt-rak')?.value) || Math.max(0, tot - lCap);
+  const pctL = tot > 0 ? (lCap / tot) * 100 : 43.94;
+  const pctR = 100 - pctL;
 
+  settings.initialCapital = tot;
+  settings.internalDebtLaura = lCap;
+  settings.internalDebtRak = rCap;
+  settings.coOwner1Percentage = pctL;
+  settings.coOwner2Percentage = pctR;
+
+  // Also update initial revision if exists
+  const initialRev = revisions.find(r => r.startYear === 2020 && r.startMonth === 11) || revisions[0];
+  if (initialRev) {
+    initialRev.capTotal = tot;
+    initialRev.capLaura = lCap;
+    initialRev.pctLaura = pctL;
+    initialRev.lauraFee = initialRev.feeTotal * (pctL / 100);
+    initialRev.rakFee = Math.max(0, initialRev.feeTotal - initialRev.lauraFee);
+    initialRev.lauraPrin = initialRev.prinTotal * (pctL / 100);
+  }
+
+  recomputeBalances();
   saveStateToStorage();
   closeAgreementModal();
   updateDashboardUI();
-  showToast("Acuerdo actualizado");
+  showToast(`Capital inicial guardado: ${fmt(lCap)} (Laura) / ${fmt(tot)} (Total)`);
 }
 
 function saveSettingsHandler(e) {
