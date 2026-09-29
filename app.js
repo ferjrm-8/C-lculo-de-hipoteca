@@ -960,6 +960,115 @@ function applyRevisionToRange(revId) {
   }
 }
 
+function generateTriAnnualRevisions() {
+  if (confirm("¿Deseas generar/completar el histórico de las 3 revisiones anuales (Noviembre, Febrero, Julio) desde 2020 a 2026?")) {
+    const list = [
+      // 2020
+      { y: 2020, m: 11, name: "Periodo Inicial (Nov 2020)", cap: 121766.32, fee: 513.81, int: 187.69, pct: 32.27 },
+      // 2021
+      { y: 2021, m: 2, name: "Revisión Febrero 2021", cap: 120800.00, fee: 513.81, int: 185.00, pct: 32.27 },
+      { y: 2021, m: 7, name: "Revisión Julio 2021", cap: 119200.00, fee: 513.81, int: 182.50, pct: 32.27 },
+      { y: 2021, m: 11, name: "Revisión Noviembre 2021", cap: 118000.00, fee: 513.81, int: 180.00, pct: 32.27 },
+      // 2022
+      { y: 2022, m: 2, name: "Revisión Febrero 2022", cap: 117000.00, fee: 513.81, int: 178.00, pct: 32.27 },
+      { y: 2022, m: 7, name: "Revisión Julio 2022", cap: 115500.00, fee: 513.81, int: 176.50, pct: 32.27 },
+      { y: 2022, m: 11, name: "1ª Rev. Noviembre 2022", cap: 114200.00, fee: 513.81, int: 176.00, pct: 32.27 },
+      // 2023
+      { y: 2023, m: 2, name: "2ª Rev. Febrero 2023", cap: 113500.00, fee: 560.20, int: 210.00, pct: 32.27 },
+      { y: 2023, m: 7, name: "3ª Rev. Julio 2023", cap: 84704.60, fee: 590.45, int: 235.00, pct: 32.27 },
+      { y: 2023, m: 11, name: "Revisión Noviembre 2023", cap: 83200.00, fee: 590.45, int: 225.00, pct: 32.27 },
+      // 2024
+      { y: 2024, m: 2, name: "Revisión Febrero 2024", cap: 82000.00, fee: 645.54, int: 245.00, pct: 43.94 },
+      { y: 2024, m: 7, name: "Revisión Julio 2024", cap: 80500.00, fee: 645.54, int: 240.00, pct: 43.94 },
+      { y: 2024, m: 11, name: "Revisión Noviembre 2024", cap: 79000.00, fee: 645.54, int: 230.00, pct: 43.94 },
+      // 2025
+      { y: 2025, m: 2, name: "Revisión Febrero 2025", cap: 77500.00, fee: 706.02, int: 220.00, pct: 43.94 },
+      { y: 2025, m: 7, name: "Revisión Julio 2025", cap: 75800.00, fee: 706.02, int: 210.00, pct: 43.94 },
+      { y: 2025, m: 11, name: "Revisión Noviembre 2025", cap: 74200.00, fee: 706.02, int: 200.00, pct: 43.94 },
+      // 2026
+      { y: 2026, m: 2, name: "Revisión Febrero 2026", cap: 72800.00, fee: 706.02, int: 190.00, pct: 43.94 },
+      { y: 2026, m: 7, name: "Revisión Julio 2026", cap: 71200.00, fee: 706.02, int: 180.00, pct: 43.94 }
+    ];
+
+    const generated = list.map((item, idx) => {
+      const capL = item.cap * (item.pct / 100);
+      const prin = Math.max(0, item.fee - item.int);
+      const lauraFee = item.fee * (item.pct / 100);
+      const rakFee = Math.max(0, item.fee - lauraFee);
+      const lauraInt = item.int * (item.pct / 100);
+      const lauraPrin = prin * (item.pct / 100);
+
+      return {
+        id: idx + 1,
+        name: item.name,
+        startYear: item.y,
+        startMonth: item.m,
+        capTotal: item.cap,
+        capLaura: capL,
+        pctLaura: item.pct,
+        feeTotal: item.fee,
+        intTotal: item.int,
+        prinTotal: prin,
+        lauraFee,
+        rakFee,
+        lauraInt,
+        lauraPrin
+      };
+    });
+
+    revisions = generated;
+    saveStateToStorage();
+    recomputeBalances();
+    updateDashboardUI();
+    showToast("¡Se han generado las 18 revisiones de 2020 a 2026!");
+  }
+}
+
+function scanAndRecoverBackups() {
+  const foundBackups = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('rev') || key.includes('hipoteca') || key.includes('backup') || key.includes('payment'))) {
+        try {
+          const val = JSON.parse(localStorage.getItem(key));
+          if (Array.isArray(val) && val.length > 0) {
+            foundBackups.push({ key, count: val.length, data: val, type: (val[0].startYear || val[0].capTotal) ? 'revisiones' : 'pagos' });
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(err) {}
+
+  if (foundBackups.length === 0) {
+    alert("No se encontraron otras copias en el almacenamiento de este navegador.");
+    return;
+  }
+
+  let msg = "Copias de datos encontradas en tu navegador:\n\n";
+  foundBackups.forEach((b, idx) => {
+    msg += `${idx + 1}. [${b.type.toUpperCase()}] Clave: "${b.key}" (${b.count} elementos)\n`;
+  });
+  msg += "\nEscribe el número de la copia que deseas restaurar (o pulsa Cancelar):";
+
+  const choice = prompt(msg, "1");
+  if (choice) {
+    const selected = foundBackups[parseInt(choice) - 1];
+    if (selected) {
+      if (selected.type === 'revisiones') {
+        revisions = selected.data;
+        showToast(`Restauradas ${selected.count} revisiones desde "${selected.key}"`);
+      } else {
+        payments = selected.data;
+        showToast(`Restaurados ${selected.count} meses desde "${selected.key}"`);
+      }
+      saveStateToStorage();
+      recomputeBalances();
+      updateDashboardUI();
+    }
+  }
+}
+
 /* ==========================================================
    MONTH REGISTRATION FORM & REACTIVE BIDIRECTIONAL MATH
    ========================================================== */
