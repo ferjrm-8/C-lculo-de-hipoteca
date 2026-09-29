@@ -824,7 +824,7 @@
       }
     }
 
-    /* Mobile Bottom Navigation Bar (Hidden on desktop) */
+    /* Bottom Navigation Bar (Visible on all screens / app-like design) */
     .mobile-tabbar {
       position: fixed;
       bottom: 0;
@@ -835,16 +835,12 @@
       -webkit-backdrop-filter: blur(12px);
       border-top: 1px solid var(--border-color);
       display: flex;
-      justify-content: space-around;
+      justify-content: center;
+      gap: 24px;
       align-items: center;
-      padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0));
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0));
       z-index: 90;
-    }
-
-    @media (min-width: 860px) {
-      .mobile-tabbar {
-        display: none;
-      }
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
     }
 
     .mobile-tab-item {
@@ -858,12 +854,19 @@
       font-size: 11px;
       font-weight: 600;
       cursor: pointer;
-      padding: 4px 10px;
-      transition: color 0.15s;
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .mobile-tab-item:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .mobile-tab-item.active {
       color: var(--primary);
+      font-weight: 700;
     }
 
     /* Modal dialog */
@@ -1261,12 +1264,13 @@
               <th style="color: var(--amber);">Derramas</th>
               <th>Seguro / IBI</th>
               <th>Otros</th>
-              <th style="color: #38bdf8; font-weight: 700;">Desc. Laura a Rak</th>
+              <th style="color: #38bdf8; font-weight: 700;">Amort. Capital Laura</th>
               <th style="color: #f43f5e; font-weight: 700;">Total Gastos Laura</th>
               <th>Desfase Mes</th>
               <th style="color: var(--primary); font-weight: 800;">Desfase Acumulado</th>
               <th>Recibo Banco</th>
-              <th style="color: var(--secondary);">Pendiente Laura</th>
+              <th style="color: var(--primary); font-weight: 800;">Pendiente Laura</th>
+              <th style="color: var(--secondary); font-size: 11px;">Pendiente Total Banco</th>
               <th style="text-align: center;">Acción</th>
             </tr>
           </thead>

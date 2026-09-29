@@ -322,22 +322,38 @@ function getOriginalExcelSeed() {
 }
 
 function recomputeBalances() {
-  let bal = settings.initialCapital;
+  payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
+
+  let bal = settings.initialCapital || 121766.32;
+  const initialPct = (settings.coOwner1Percentage || 32.27) / 100;
+  let capLaura = (settings.internalDebtLaura && settings.internalDebtLaura > 0)
+    ? Number(settings.internalDebtLaura)
+    : (bal * initialPct);
+
   let accBal = 0;
   let totLauraDiscount = 0;
 
-  payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
-
   payments.forEach(p => {
+    const rev = getActiveRevisionForDate(p.year, p.month);
+    const lauraPct = (p.totalFee && p.co1) 
+      ? (p.co1 / p.totalFee) 
+      : (rev ? (rev.pctLaura / 100) : initialPct);
+
     const prin = Number(p.principal) || 0;
     const ext = Number(p.extra) || 0;
     const lDiscount = Number(p.lauraExtraAmort) || 0;
 
-    // Track total Laura capital discounts
+    // Laura's regular principal amortization from receipt
+    const lauraPrin = prin * lauraPct;
+
     totLauraDiscount += lDiscount;
     p.accLauraDiscount = totLauraDiscount;
 
-    // Loan capital reduction (regular amortization + extraordinary amortizations)
+    // Laura's pending capital reduces month-by-month
+    capLaura = Math.max(0, capLaura - (lauraPrin + lDiscount));
+    p.lauraRemaining = capLaura;
+
+    // Total bank loan capital reduces
     bal = Math.max(0, bal - (prin + ext + lDiscount));
     p.remaining = bal;
 
@@ -349,7 +365,7 @@ function recomputeBalances() {
     const ibi = Number(p.ibi) || 0;
     const other = Number(p.otherExtra) || 0;
 
-    // Laura's total monthly operational expenses (excludes capital discount to avoid fake cash debt!)
+    // Laura's operational monthly expenses
     const expense = co1 + com + luz + derr + ins + ibi + other;
     p.totalExpenses = expense;
     p.monthGap = ((Number(p.deposit) || 0) - expense);
@@ -401,7 +417,7 @@ function checkCapitalDiscrepancy() {
 
   const diff = Math.abs(latest.remaining - expectedCap);
 
-  if (diff > 150) {
+  if (diff > 250) {
     banner.style.display = 'flex';
     textEl.innerHTML = `Descuadre de <strong>${fmt(diff)}</strong> entre el capital acumulado (${fmt(latest.remaining)}) y la referencia bancaria (${fmt(expectedCap)}) de <em>${rev.name}</em>.`;
   } else {
@@ -471,11 +487,13 @@ function updateDashboardUI() {
     document.getElementById('kpi-exp-luz').textContent = hasPayments ? fmt(latest.electricity) : "0,00 €";
   }
 
-  const totalLauraDirectAmort = latest ? (latest.accLauraDiscount || 0) : 0;
-  const pendingLauraDebt = Math.max(0, (settings.internalDebtLaura || 33486) - totalLauraDirectAmort);
+  const initialLauraCap = (settings.internalDebtLaura && settings.internalDebtLaura > 0)
+    ? Number(settings.internalDebtLaura)
+    : (settings.initialCapital * (pctLaura / 100));
+  const currentLauraCap = latest ? latest.lauraRemaining : initialLauraCap;
 
   if (document.getElementById('kpi-laura-remaining')) {
-    document.getElementById('kpi-laura-remaining').textContent = fmt(pendingLauraDebt);
+    document.getElementById('kpi-laura-remaining').textContent = fmt(currentLauraCap);
   }
 
   // Co-owners agreement dynamic percentages
@@ -509,8 +527,8 @@ function updateDashboardUI() {
     document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
   }
 
-  if (document.getElementById('val-debt-laura')) document.getElementById('val-debt-laura').textContent = fmt(pendingLauraDebt);
-  if (document.getElementById('val-debt-rak')) document.getElementById('val-debt-rak').textContent = fmt(settings.internalDebtRak || 68266);
+  if (document.getElementById('val-debt-laura')) document.getElementById('val-debt-laura').textContent = fmt(currentLauraCap);
+  if (document.getElementById('val-debt-rak')) document.getElementById('val-debt-rak').textContent = fmt(Math.max(0, remaining - currentLauraCap));
 
   checkCapitalDiscrepancy();
   renderHistoryTable();
@@ -525,16 +543,18 @@ function switchTab(tabId) {
     const viewEl = document.getElementById('tab-content-' + t);
     if (viewEl) viewEl.style.display = (t === tabId) ? 'block' : 'none';
 
-    const dTab = document.getElementById('d-tab-' + t);
-    if (dTab) {
-      if (t === tabId) dTab.classList.add('active');
-      else dTab.classList.remove('active');
+    // Desktop navbar button
+    const dBtn = document.getElementById('d-btn-' + t);
+    if (dBtn) {
+      if (t === tabId) dBtn.classList.add('active');
+      else dBtn.classList.remove('active');
     }
 
-    const mTab = document.getElementById('m-tab-' + t);
-    if (mTab) {
-      if (t === tabId) mTab.classList.add('active');
-      else mTab.classList.remove('active');
+    // Bottom tabbar button
+    const mBtn = document.getElementById('m-btn-' + t);
+    if (mBtn) {
+      if (t === tabId) mBtn.classList.add('active');
+      else mBtn.classList.remove('active');
     }
   });
 
@@ -738,6 +758,7 @@ function renderHistoryTable() {
       <td style="font-weight: 700; color: ${gapColor};">${p.monthGap >= 0 ? '+' : ''}${fmt(p.monthGap)}</td>
       <td style="font-weight: 800; font-size: 13px; color: ${accColor}; background: ${p.accBalance >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 6px; padding: 6px 10px;">${p.accBalance >= 0 ? '+' : ''}${fmt(p.accBalance)}</td>
       <td style="color: var(--text-muted); font-size: 11px;">${fmt(p.totalFee)}</td>
+      <td style="color: var(--primary); font-weight: 700;">${fmt(p.lauraRemaining)}</td>
       <td style="color: var(--secondary); font-size: 11px;">${fmt(p.remaining)}</td>
       <td style="text-align: center;">
         <button onclick="openEditModal(${p.id})" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;">Editar</button>
