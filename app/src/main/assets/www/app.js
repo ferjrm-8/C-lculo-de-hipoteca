@@ -187,18 +187,20 @@ let payments = [];
 /* ==========================================================
    FIRESTORE CLOUD SYNCHRONIZATION
    ========================================================== */
-const DEFAULT_SYNC_KEY = 'mi_sistema_hipoteca';
+const DEFAULT_SYNC_KEY = 'ferjrm@gmail.com';
 let currentSyncKey = DEFAULT_SYNC_KEY;
 let firestoreUnsubscribe = null;
 
 function sanitizeSyncKey(val) {
   if (!val) return DEFAULT_SYNC_KEY;
-  return val.trim().toLowerCase().replace(/[\/\\#\$\.\[\]]/g, '_') || DEFAULT_SYNC_KEY;
+  return val.trim().toLowerCase().replace(/[\/\\#\$\.\[\]]/g, (m) => m === '.' ? '.' : '_') || DEFAULT_SYNC_KEY;
 }
 
 function getSyncKey() {
   try {
-    return sanitizeSyncKey(localStorage.getItem('mortgage_sync_key') || DEFAULT_SYNC_KEY);
+    const saved = localStorage.getItem('mortgage_sync_key');
+    if (saved) return sanitizeSyncKey(saved);
+    return DEFAULT_SYNC_KEY;
   } catch (e) {
     return DEFAULT_SYNC_KEY;
   }
@@ -498,42 +500,6 @@ function getActiveRevisionForDate(year, month) {
   return matched;
 }
 
-function checkCapitalDiscrepancy() {
-  const banner = document.getElementById('capital-mismatch-banner');
-  const textEl = document.getElementById('capital-mismatch-text');
-  if (!banner || !textEl) return;
-
-  if (!payments || payments.length === 0 || !revisions || revisions.length === 0) {
-    banner.style.display = 'none';
-    return;
-  }
-
-  const latest = payments[payments.length - 1];
-  const rev = getActiveRevisionForDate(latest.year, latest.month);
-  if (!rev) {
-    banner.style.display = 'none';
-    return;
-  }
-
-  // Calculate expected trajectory from the revision benchmark
-  const revStartPayments = payments.filter(p => p.year > rev.startYear || (p.year === rev.startYear && p.month >= rev.startMonth));
-  
-  let expectedCap = rev.capTotal;
-  revStartPayments.forEach(p => {
-    const extA = Math.max(Number(p.extra) || 0, Number(p.lauraExtraAmort) || 0);
-    expectedCap = Math.max(0, expectedCap - ((Number(p.principal) || 0) + extA));
-  });
-
-  const diff = Math.abs(latest.remaining - expectedCap);
-
-  if (diff > 250) {
-    banner.style.display = 'flex';
-    textEl.innerHTML = `Descuadre de <strong>${fmt(diff)}</strong> entre el capital acumulado (${fmt(latest.remaining)}) y la referencia bancaria (${fmt(expectedCap)}) de <em>${rev.name}</em>.`;
-  } else {
-    banner.style.display = 'none';
-  }
-}
-
 function updateDashboardUI() {
   const hasPayments = payments && payments.length > 0;
   const latest = hasPayments ? payments[payments.length - 1] : null;
@@ -651,7 +617,6 @@ function updateDashboardUI() {
     document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
   }
 
-  checkCapitalDiscrepancy();
   renderHistoryTable();
   renderRevisionsTable();
   drawFinancialCharts();
@@ -1107,72 +1072,10 @@ function applyRevisionToRange(revId) {
   }
 }
 
-function generateTriAnnualRevisions() {
-  if (confirm("¿Deseas generar/completar el histórico de las 3 revisiones anuales (Noviembre, Febrero, Julio) desde 2020 a 2026?")) {
-    const list = [
-      // 2020
-      { y: 2020, m: 11, name: "Periodo Inicial (Nov 2020)", cap: 121766.32, fee: 513.81, int: 187.69, pct: 32.27 },
-      // 2021
-      { y: 2021, m: 2, name: "Revisión Febrero 2021", cap: 120800.00, fee: 513.81, int: 185.00, pct: 32.27 },
-      { y: 2021, m: 7, name: "Revisión Julio 2021", cap: 119200.00, fee: 513.81, int: 182.50, pct: 32.27 },
-      { y: 2021, m: 11, name: "Revisión Noviembre 2021", cap: 118000.00, fee: 513.81, int: 180.00, pct: 32.27 },
-      // 2022
-      { y: 2022, m: 2, name: "Revisión Febrero 2022", cap: 117000.00, fee: 513.81, int: 178.00, pct: 32.27 },
-      { y: 2022, m: 7, name: "Revisión Julio 2022", cap: 115500.00, fee: 513.81, int: 176.50, pct: 32.27 },
-      { y: 2022, m: 11, name: "1ª Rev. Noviembre 2022", cap: 114200.00, fee: 513.81, int: 176.00, pct: 32.27 },
-      // 2023
-      { y: 2023, m: 2, name: "2ª Rev. Febrero 2023", cap: 113500.00, fee: 560.20, int: 210.00, pct: 32.27 },
-      { y: 2023, m: 7, name: "3ª Rev. Julio 2023", cap: 84704.60, fee: 590.45, int: 235.00, pct: 32.27 },
-      { y: 2023, m: 11, name: "Revisión Noviembre 2023", cap: 83200.00, fee: 590.45, int: 225.00, pct: 32.27 },
-      // 2024
-      { y: 2024, m: 2, name: "Revisión Febrero 2024", cap: 82000.00, fee: 645.54, int: 245.00, pct: 43.94 },
-      { y: 2024, m: 7, name: "Revisión Julio 2024", cap: 80500.00, fee: 645.54, int: 240.00, pct: 43.94 },
-      { y: 2024, m: 11, name: "Revisión Noviembre 2024", cap: 79000.00, fee: 645.54, int: 230.00, pct: 43.94 },
-      // 2025
-      { y: 2025, m: 2, name: "Revisión Febrero 2025", cap: 77500.00, fee: 706.02, int: 220.00, pct: 43.94 },
-      { y: 2025, m: 7, name: "Revisión Julio 2025", cap: 75800.00, fee: 706.02, int: 210.00, pct: 43.94 },
-      { y: 2025, m: 11, name: "Revisión Noviembre 2025", cap: 74200.00, fee: 706.02, int: 200.00, pct: 43.94 },
-      // 2026
-      { y: 2026, m: 2, name: "Revisión Febrero 2026", cap: 72800.00, fee: 706.02, int: 190.00, pct: 43.94 },
-      { y: 2026, m: 7, name: "Revisión Julio 2026", cap: 71200.00, fee: 706.02, int: 180.00, pct: 43.94 }
-    ];
-
-    const generated = list.map((item, idx) => {
-      const capL = item.cap * (item.pct / 100);
-      const prin = Math.max(0, item.fee - item.int);
-      const lauraFee = item.fee * (item.pct / 100);
-      const rakFee = Math.max(0, item.fee - lauraFee);
-      const lauraInt = item.int * (item.pct / 100);
-      const lauraPrin = prin * (item.pct / 100);
-
-      return {
-        id: idx + 1,
-        name: item.name,
-        startYear: item.y,
-        startMonth: item.m,
-        capTotal: item.cap,
-        capLaura: capL,
-        pctLaura: item.pct,
-        feeTotal: item.fee,
-        intTotal: item.int,
-        prinTotal: prin,
-        lauraFee,
-        rakFee,
-        lauraInt,
-        lauraPrin
-      };
-    });
-
-    revisions = generated;
-    saveStateToStorage();
-    recomputeBalances();
-    updateDashboardUI();
-    showToast("¡Se han generado las 18 revisiones de 2020 a 2026!");
-  }
-}
-
-function scanAndRecoverBackups() {
+async function scanAndRecoverBackups() {
   const foundBackups = [];
+
+  // 1. Scan LocalStorage across all known version keys
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -1180,21 +1083,64 @@ function scanAndRecoverBackups() {
         try {
           const val = JSON.parse(localStorage.getItem(key));
           if (Array.isArray(val) && val.length > 0) {
-            foundBackups.push({ key, count: val.length, data: val, type: (val[0].startYear || val[0].capTotal) ? 'revisiones' : 'pagos' });
+            foundBackups.push({
+              source: 'local',
+              key,
+              count: val.length,
+              data: val,
+              type: (val[0].startYear || val[0].capTotal) ? 'revisiones' : 'pagos'
+            });
           }
         } catch(e) {}
       }
     }
   } catch(err) {}
 
+  // 2. Scan Cloud Firestore Accounts
+  if (window.firebaseSync && window.firebaseSync.db) {
+    const { db, doc, getDoc } = window.firebaseSync;
+    const candidates = ['ferjrm@gmail.com', 'mi_sistema_hipoteca', 'ferjrm_gmail_com', 'ferjrm'];
+    if (currentSyncKey && !candidates.includes(currentSyncKey)) candidates.unshift(currentSyncKey);
+
+    for (const cand of candidates) {
+      try {
+        const docRef = doc(db, 'mortgage_accounts', cand);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const cData = snap.data();
+          if (cData && ((cData.payments && cData.payments.length > 0) || (cData.revisions && cData.revisions.length > 0))) {
+            const pCount = cData.payments ? cData.payments.length : 0;
+            const rCount = cData.revisions ? cData.revisions.length : 0;
+            const dateStr = cData.updatedAt ? new Date(cData.updatedAt).toLocaleDateString('es-ES') : '';
+            foundBackups.push({
+              source: 'cloud',
+              key: cand,
+              count: pCount,
+              rCount: rCount,
+              dateStr,
+              cloudData: cData,
+              type: 'completo_nube'
+            });
+          }
+        }
+      } catch(e) {
+        console.warn("Cloud candidate scan notice:", e);
+      }
+    }
+  }
+
   if (foundBackups.length === 0) {
-    alert("No se encontraron otras copias en el almacenamiento de este navegador.");
+    alert("No se encontraron copias de seguridad en la nube ni en este dispositivo.");
     return;
   }
 
-  let msg = "Copias de datos encontradas en tu navegador:\n\n";
+  let msg = "Copias de seguridad encontradas (Nube y Local):\n\n";
   foundBackups.forEach((b, idx) => {
-    msg += `${idx + 1}. [${b.type.toUpperCase()}] Clave: "${b.key}" (${b.count} elementos)\n`;
+    if (b.source === 'cloud') {
+      msg += `${idx + 1}. ☁️ NUBE [${b.key}]: ${b.count} meses, ${b.rCount} revisiones (${b.dateStr})\n`;
+    } else {
+      msg += `${idx + 1}. 📱 LOCAL [${b.key}]: ${b.count} ${b.type}\n`;
+    }
   });
   msg += "\nEscribe el número de la copia que deseas restaurar (o pulsa Cancelar):";
 
@@ -1202,12 +1148,20 @@ function scanAndRecoverBackups() {
   if (choice) {
     const selected = foundBackups[parseInt(choice) - 1];
     if (selected) {
-      if (selected.type === 'revisiones') {
-        revisions = selected.data;
-        showToast(`Restauradas ${selected.count} revisiones desde "${selected.key}"`);
+      if (selected.source === 'cloud') {
+        if (selected.cloudData.settings) settings = { ...settings, ...selected.cloudData.settings };
+        if (selected.cloudData.revisions && selected.cloudData.revisions.length > 0) revisions = selected.cloudData.revisions;
+        if (selected.cloudData.payments && selected.cloudData.payments.length > 0) payments = selected.cloudData.payments;
+        setSyncKey(selected.key);
+        showToast(`Copia de la nube [${selected.key}] restaurada con éxito`);
       } else {
-        payments = selected.data;
-        showToast(`Restaurados ${selected.count} meses desde "${selected.key}"`);
+        if (selected.type === 'revisiones') {
+          revisions = selected.data;
+          showToast(`Restauradas ${selected.count} revisiones locales`);
+        } else {
+          payments = selected.data;
+          showToast(`Restaurados ${selected.count} meses locales`);
+        }
       }
       saveStateToStorage();
       recomputeBalances();
@@ -1796,7 +1750,7 @@ let isSyncingIncoming = false;
 
 function connectFirestoreSync(key) {
   if (!window.firebaseSync || !window.firebaseSync.db) return;
-  const { db, doc, onSnapshot } = window.firebaseSync;
+  const { db, doc, onSnapshot, getDoc, setDoc } = window.firebaseSync;
 
   if (firestoreUnsubscribe) {
     try { firestoreUnsubscribe(); } catch (e) {}
@@ -1805,7 +1759,7 @@ function connectFirestoreSync(key) {
   try {
     const docRef = doc(db, 'mortgage_accounts', key);
 
-    firestoreUnsubscribe = onSnapshot(docRef, docSnap => {
+    firestoreUnsubscribe = onSnapshot(docRef, async (docSnap) => {
       if (docSnap && docSnap.exists()) {
         const data = docSnap.data();
         if (data) {
@@ -1839,8 +1793,33 @@ function connectFirestoreSync(key) {
           isSyncingIncoming = false;
         }
       } else {
-        // Document does not exist in cloud yet for this key, sync our local data up
-        syncToFirestoreIfAvailable(true);
+        // If document doesn't exist yet for this key, check if legacy account exists
+        let migrated = false;
+        if (key !== 'mi_sistema_hipoteca') {
+          try {
+            const altSnap = await getDoc(doc(db, 'mortgage_accounts', 'mi_sistema_hipoteca'));
+            if (altSnap.exists()) {
+              const altData = altSnap.data();
+              if (altData && ((altData.payments && altData.payments.length > 0) || (altData.revisions && altData.revisions.length > 0))) {
+                isSyncingIncoming = true;
+                if (altData.settings) settings = { ...settings, ...altData.settings };
+                if (altData.revisions && altData.revisions.length > 0) revisions = altData.revisions;
+                if (altData.payments && altData.payments.length > 0) payments = altData.payments;
+                saveStateToStorage();
+                recomputeBalances();
+                updateDashboardUI();
+                isSyncingIncoming = false;
+                migrated = true;
+                syncToFirestoreIfAvailable(true);
+              }
+            }
+          } catch(e) {
+            console.warn("Migration check notice:", e);
+          }
+        }
+        if (!migrated) {
+          syncToFirestoreIfAvailable(true);
+        }
       }
     }, err => {
       console.warn("Firestore sync listener notice:", err);

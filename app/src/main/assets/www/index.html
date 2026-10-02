@@ -998,20 +998,6 @@
     <!-- ============================================== -->
     <div id="tab-content-dashboard">
 
-      <!-- Discrepancy / Descuadre Notice Banner -->
-      <div id="capital-mismatch-banner" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          <div>
-            <div style="font-weight: 800; font-size: 13px; color: #fff;">Aviso de Descuadre en Capital Pendiente</div>
-            <div id="capital-mismatch-text" style="font-size: 12px; color: #fca5a5;">Diferencia entre las amortizaciones acumuladas de los meses y la última revisión del banco.</div>
-          </div>
-        </div>
-        <button onclick="switchTab('revisions')" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.4); font-size: 11px;">
-          Ver Revisiones
-        </button>
-      </div>
-
       <!-- Banner de inicio limpio cuando no hay meses registrados -->
       <div id="empty-state-banner" style="display: none; background: rgba(59, 130, 246, 0.08); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 20px; text-align: center;">
         <div style="font-weight: 800; font-size: 15px; color: #fff; margin-bottom: 12px;">Histórico vacío</div>
@@ -1307,12 +1293,9 @@
             Periodos de Revisión de Cuota (Noviembre, Febrero, Julio)
           </h2>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button onclick="scanAndRecoverBackups()" class="btn btn-secondary btn-sm" title="Escanear almacenamiento local en busca de datos anteriores">
+            <button onclick="scanAndRecoverBackups()" class="btn btn-secondary btn-sm" title="Escanear copias en la nube y almacenamiento en busca de revisiones y datos">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              Recuperar Copias
-            </button>
-            <button onclick="generateTriAnnualRevisions()" class="btn btn-secondary btn-sm" style="color: var(--primary); border-color: rgba(16,185,129,0.3);">
-              ✨ Generar Todas (2020-2026)
+              Recuperar Copias (Nube y Local)
             </button>
             <button onclick="openRevisionModal()" class="btn btn-primary btn-sm">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
