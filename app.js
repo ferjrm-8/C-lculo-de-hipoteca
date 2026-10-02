@@ -2100,25 +2100,25 @@ async function handleSyncLogin(e) {
   const emailInput = document.getElementById('sync-input-email');
   const pwdInput = document.getElementById('sync-input-password');
 
-  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  let rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
   const pwd = pwdInput ? pwdInput.value.trim() : '';
 
   if (!rawEmail) {
     showSyncModalMsg('Introduce un correo electrónico o usuario válido.', 'error');
     return;
   }
-  if (!pwd) {
-    showSyncModalMsg('Introduce tu contraseña.', 'error');
-    return;
+  // Normalize aliases for main user
+  if (rawEmail === 'ferjrm' || rawEmail === 'mi_sistema_hipoteca') {
+    rawEmail = DEFAULT_USER_EMAIL;
   }
 
-  showSyncModalMsg('Verificando credenciales en la nube...', 'info');
+  showSyncModalMsg('Conectando con la nube...', 'info');
 
   try {
-    const pwdHash = hashPassword(pwd);
+    const pwdHash = pwd ? hashPassword(pwd) : '';
 
     // 1. Fetch Master Registry to resolve bin and account security
-    let binId = currentBinId;
+    let binId = DEFAULT_USER_BIN;
     let expectedPasswordHash = '';
 
     const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
@@ -2127,12 +2127,12 @@ async function handleSyncLogin(e) {
       reg = await regRes.json();
     }
 
-    if (rawEmail === DEFAULT_USER_EMAIL || rawEmail === 'ferjrm' || rawEmail === 'mi_sistema_hipoteca') {
+    if (rawEmail === DEFAULT_USER_EMAIL) {
       binId = DEFAULT_USER_BIN;
     } else if (reg.users && reg.users[rawEmail]) {
       binId = reg.users[rawEmail];
     } else {
-      showSyncModalMsg('Esta cuenta no existe en la nube. Puedes crearla en la pestaña "Crear Cuenta".', 'warning');
+      showSyncModalMsg(`Esta cuenta ("${rawEmail}") no existe aún en la nube. <div style="margin-top:8px"><button type="button" onclick="switchSyncTab('register')" class="btn btn-secondary btn-sm" style="color:#10b981;border-color:#10b981;font-size:11px;padding:4px 8px;">✨ Crear cuenta ahora</button></div>`, 'warning');
       return;
     }
 
@@ -2143,7 +2143,7 @@ async function handleSyncLogin(e) {
     // 2. Fetch cloud bin data
     const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`);
     if (!binRes.ok) {
-      showSyncModalMsg('Error al conectar con la cuenta en la nube.', 'error');
+      showSyncModalMsg('Error al conectar con el almacén en la nube.', 'error');
       return;
     }
 
@@ -2154,45 +2154,126 @@ async function handleSyncLogin(e) {
 
     // 3. Password Verification
     if (expectedPasswordHash) {
+      if (!pwd) {
+        showSyncModalMsg(`🔐 Esta cuenta está protegida con contraseña. Introduce tu contraseña para entrar o pulsa abajo para restablecerla.<div style="margin-top:8px"><button type="button" onclick="resetAccountPassword('${rawEmail}', '${binId}')" class="btn btn-secondary btn-sm" style="background:#233725;color:#facc15;border-color:#ca8a04;font-size:11px;padding:4px 8px;">🔓 Restablecer / Quitar contraseña</button></div>`, 'warning');
+        return;
+      }
       if (expectedPasswordHash !== pwdHash) {
-        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta. Comprueba mayúsculas o caracteres.', 'error');
+        showSyncModalMsg(`❌ Contraseña incorrecta para esta cuenta.<div style="margin-top:8px"><button type="button" onclick="resetAccountPassword('${rawEmail}', '${binId}')" class="btn btn-secondary btn-sm" style="background:#233725;color:#facc15;border-color:#ca8a04;font-size:11px;padding:4px 8px;">🔓 ¿Has olvidado la clave? Restablecer / Quitar contraseña</button></div>`, 'error');
         return;
       }
     } else {
-      // First time setting password on this account
-      cloudData.passwordHash = pwdHash;
-      await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cloudData)
-      });
+      // Account currently has no password in cloud
+      if (pwd) {
+        // User voluntarily entered a password to protect account
+        cloudData.passwordHash = pwdHash;
+        await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cloudData)
+        });
 
-      // Update registry account
-      reg.accounts = reg.accounts || {};
-      reg.accounts[rawEmail] = reg.accounts[rawEmail] || { email: rawEmail, binId };
-      reg.accounts[rawEmail].passwordHash = pwdHash;
-      reg.accounts[rawEmail].updatedAt = Date.now();
-      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reg)
-      });
-      showToast('🔒 Contraseña guardada con éxito. Tu cuenta ahora está protegida.');
+        // Update registry account
+        reg.accounts = reg.accounts || {};
+        reg.accounts[rawEmail] = reg.accounts[rawEmail] || { email: rawEmail, binId };
+        reg.accounts[rawEmail].passwordHash = pwdHash;
+        reg.accounts[rawEmail].updatedAt = Date.now();
+        await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reg)
+        });
+        showToast('🔒 Contraseña guardada. Tu cuenta ahora está protegida.');
+      }
     }
 
     // Authentication successful
     currentEmail = rawEmail;
-    currentPasswordHash = pwdHash;
+    currentPasswordHash = expectedPasswordHash ? pwdHash : (pwd ? pwdHash : '');
     currentBinId = binId;
-    saveStoredAuth(rawEmail, pwdHash, binId);
+    saveStoredAuth(rawEmail, currentPasswordHash, binId);
 
     applyCloudData(cloudData);
     closeSyncModal();
     showToast(`✅ Sesión iniciada como ${rawEmail} (Sincronizado)`);
   } catch (err) {
     console.error("Login notice:", err);
-    showSyncModalMsg('Error de conexión al verificar contraseña: ' + (err.message || err), 'error');
+    showSyncModalMsg('Error de conexión al verificar cuenta: ' + (err.message || err), 'error');
   }
+}
+
+/* ==========================================================
+   AUTHENTICATION: RESET / UNLOCK PASSWORD
+   ========================================================== */
+async function resetAccountPassword(email, binId) {
+  const targetEmail = (email || currentEmail || DEFAULT_USER_EMAIL).trim().toLowerCase();
+  const targetBinId = binId || currentBinId || DEFAULT_USER_BIN;
+
+  showSyncModalMsg('Restableciendo contraseña en la nube...', 'info');
+
+  try {
+    // 1. Clear password in bin
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBinId}?t=${Date.now()}`);
+    let cloudData = null;
+    if (binRes.ok) {
+      cloudData = await binRes.json();
+      cloudData.passwordHash = '';
+      cloudData.updatedAt = Date.now();
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBinId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cloudData)
+      });
+    }
+
+    // 2. Clear password in registry
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    if (regRes.ok) {
+      const reg = await regRes.json();
+      if (reg.accounts && reg.accounts[targetEmail]) {
+        reg.accounts[targetEmail].passwordHash = '';
+        reg.accounts[targetEmail].updatedAt = Date.now();
+      }
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reg)
+      });
+    }
+
+    currentEmail = targetEmail;
+    currentPasswordHash = '';
+    currentBinId = targetBinId;
+    saveStoredAuth(targetEmail, '', targetBinId);
+
+    if (cloudData) applyCloudData(cloudData);
+    updateSyncUI();
+    closeSyncModal();
+    showToast(`🔓 Contraseña restablecida con éxito. Conectado como ${targetEmail}`);
+  } catch (err) {
+    console.error("Reset error:", err);
+    showSyncModalMsg('Error al restablecer contraseña: ' + (err.message || err), 'error');
+  }
+}
+
+function handleQuickUnlock() {
+  const emailInput = document.getElementById('sync-input-email');
+  const email = emailInput ? emailInput.value.trim().toLowerCase() : currentEmail;
+  resetAccountPassword(email, currentBinId);
+}
+
+function switchToLoginFor(email) {
+  switchSyncTab('login');
+  const emailInput = document.getElementById('sync-input-email');
+  if (emailInput) {
+    emailInput.value = email;
+  }
+  const pwdInput = document.getElementById('sync-input-password');
+  if (pwdInput) {
+    pwdInput.value = '';
+    pwdInput.focus();
+  }
+  showSyncModalMsg(`Introduce la contraseña de ${email} o pulsa en "Restablecer contraseña" si no la recuerdas.`, 'info');
 }
 
 /* ==========================================================
@@ -2204,13 +2285,16 @@ async function handleCreateUser(e) {
   const pwdInput = document.getElementById('sync-reg-password');
   const confirmInput = document.getElementById('sync-reg-confirm');
 
-  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  let rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
   const pwd = pwdInput ? pwdInput.value.trim() : '';
   const confirmPwd = confirmInput ? confirmInput.value.trim() : '';
 
-  if (!rawEmail || !rawEmail.includes('@')) {
-    showSyncModalMsg('Introduce un correo electrónico válido para registrar la cuenta.', 'error');
+  if (!rawEmail) {
+    showSyncModalMsg('Introduce un correo electrónico o nombre de usuario.', 'error');
     return;
+  }
+  if (!rawEmail.includes('@') && !rawEmail.includes('.')) {
+    rawEmail = rawEmail + '@gmail.com';
   }
   if (!pwd || pwd.length < 4) {
     showSyncModalMsg('La contraseña debe tener al menos 4 caracteres.', 'error');
@@ -2236,7 +2320,7 @@ async function handleCreateUser(e) {
     reg.accounts = reg.accounts || {};
 
     if (reg.users[rawEmail] || reg.accounts[rawEmail]) {
-      showSyncModalMsg('⚠️ Este correo ya está registrado. Usa la pestaña "Iniciar Sesión" para acceder.', 'warning');
+      showSyncModalMsg(`ℹ️ Esta cuenta (${rawEmail}) ya existe en la nube. <div style="margin-top:8px"><button type="button" onclick="switchToLoginFor('${rawEmail}')" class="btn btn-secondary btn-sm" style="color:#10b981;border-color:#10b981;font-size:11px;padding:4px 8px;">👉 Entrar a esta cuenta ahora</button></div>`, 'warning');
       return;
     }
 
