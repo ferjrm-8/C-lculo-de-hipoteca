@@ -73,6 +73,8 @@ fun WebContainer(
                     databaseEnabled = true
                     allowFileAccess = true
                     allowContentAccess = true
+                    allowFileAccessFromFileURLs = true
+                    allowUniversalAccessFromFileURLs = true
                     loadWithOverviewMode = false
                     useWideViewPort = true
                     textZoom = 100

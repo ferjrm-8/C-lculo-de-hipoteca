@@ -185,50 +185,58 @@ let revisions = [
 let payments = [];
 
 /* ==========================================================
-   FIRESTORE CLOUD SYNCHRONIZATION
+   SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
-const DEFAULT_SYNC_KEY = 'ferjrm@gmail.com';
-let currentSyncKey = DEFAULT_SYNC_KEY;
-let firestoreUnsubscribe = null;
+const MASTER_REGISTRY_BIN = 'caedfaf';
+const DEFAULT_USER_EMAIL = 'ferjrm@gmail.com';
+const DEFAULT_USER_BIN = 'ddbcbca';
 
-function sanitizeSyncKey(val) {
-  if (!val) return DEFAULT_SYNC_KEY;
-  return val.trim().toLowerCase().replace(/[\/\\#\$\.\[\]]/g, (m) => m === '.' ? '.' : '_') || DEFAULT_SYNC_KEY;
+let currentEmail = DEFAULT_USER_EMAIL;
+let currentBinId = DEFAULT_USER_BIN;
+let currentPasswordHash = '';
+let localLastSyncTime = 0;
+let realtimePollInterval = null;
+let isSyncingIncoming = false;
+
+async function hashPassword(pwd) {
+  if (!pwd) return '';
+  const enc = new TextEncoder().encode(pwd.trim());
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getSyncKey() {
+function getStoredAuth() {
   try {
-    const saved = localStorage.getItem('mortgage_sync_key');
-    if (saved) return sanitizeSyncKey(saved);
-    return DEFAULT_SYNC_KEY;
+    const email = localStorage.getItem('mortgage_auth_email') || DEFAULT_USER_EMAIL;
+    const hash = localStorage.getItem('mortgage_auth_hash') || '';
+    const bin = localStorage.getItem('mortgage_auth_bin') || DEFAULT_USER_BIN;
+    return { email, hash, bin };
   } catch (e) {
-    return DEFAULT_SYNC_KEY;
+    return { email: DEFAULT_USER_EMAIL, hash: '', bin: DEFAULT_USER_BIN };
   }
 }
 
-function setSyncKey(val) {
-  const clean = sanitizeSyncKey(val);
+function saveStoredAuth(email, hash, bin) {
   try {
-    localStorage.setItem('mortgage_sync_key', clean);
+    localStorage.setItem('mortgage_auth_email', email);
+    localStorage.setItem('mortgage_auth_hash', hash);
+    localStorage.setItem('mortgage_auth_bin', bin);
   } catch (e) {}
-  currentSyncKey = clean;
-  updateSyncUI();
-  connectFirestoreSync(clean);
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  currentSyncKey = getSyncKey();
+window.addEventListener('DOMContentLoaded', async () => {
+  const auth = getStoredAuth();
+  currentEmail = auth.email;
+  currentPasswordHash = auth.hash;
+  currentBinId = auth.bin;
+
   loadStateFromStorage();
   updateDashboardUI();
   updateSyncUI();
 
-  if (window.firebaseSync && window.firebaseSync.db) {
-    connectFirestoreSync(currentSyncKey);
-  } else {
-    window.addEventListener('firebase-sync-ready', () => {
-      connectFirestoreSync(currentSyncKey);
-    });
-  }
+  // Initialize and connect to cloud
+  await initCloudSync();
+  startRealtimePoller();
 });
 
 function loadStateFromStorage() {
@@ -311,7 +319,7 @@ function saveStateToStorage() {
     localStorage.setItem('hipoteca_payments_v7', payStr);
     localStorage.setItem('hipoteca_payments_v6', payStr);
   } catch (err) {}
-  syncToFirestoreIfAvailable();
+  scheduleCloudSync();
 }
 
 function getOriginalExcelSeed() {
@@ -1096,25 +1104,31 @@ async function scanAndRecoverBackups() {
     }
   } catch(err) {}
 
-  // 2. Scan Cloud Firestore Accounts
-  if (window.firebaseSync && window.firebaseSync.db) {
-    const { db, doc, getDoc } = window.firebaseSync;
-    const candidates = ['ferjrm@gmail.com', 'mi_sistema_hipoteca', 'ferjrm_gmail_com', 'ferjrm'];
-    if (currentSyncKey && !candidates.includes(currentSyncKey)) candidates.unshift(currentSyncKey);
+  // 2. Scan Cloud Storage
+  try {
+    const cloudBins = [
+      { id: currentBinId || DEFAULT_USER_BIN, name: currentEmail || DEFAULT_USER_EMAIL },
+      { id: DEFAULT_USER_BIN, name: 'ferjrm@gmail.com' }
+    ];
+    // deduplicate
+    const seenBins = new Set();
 
-    for (const cand of candidates) {
+    for (const b of cloudBins) {
+      if (seenBins.has(b.id)) continue;
+      seenBins.add(b.id);
+
       try {
-        const docRef = doc(db, 'mortgage_accounts', cand);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          const cData = snap.data();
+        const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${b.id}?t=${Date.now()}`);
+        if (res.ok) {
+          const cData = await res.json();
           if (cData && ((cData.payments && cData.payments.length > 0) || (cData.revisions && cData.revisions.length > 0))) {
             const pCount = cData.payments ? cData.payments.length : 0;
             const rCount = cData.revisions ? cData.revisions.length : 0;
-            const dateStr = cData.updatedAt ? new Date(cData.updatedAt).toLocaleDateString('es-ES') : '';
+            const dateStr = cData.lastUpdatedText || (cData.updatedAt ? new Date(cData.updatedAt).toLocaleDateString('es-ES') : '');
             foundBackups.push({
               source: 'cloud',
-              key: cand,
+              key: b.name,
+              binId: b.id,
               count: pCount,
               rCount: rCount,
               dateStr,
@@ -1123,11 +1137,9 @@ async function scanAndRecoverBackups() {
             });
           }
         }
-      } catch(e) {
-        console.warn("Cloud candidate scan notice:", e);
-      }
+      } catch(e) {}
     }
-  }
+  } catch(err) {}
 
   if (foundBackups.length === 0) {
     alert("No se encontraron copias de seguridad en la nube ni en este dispositivo.");
@@ -1149,10 +1161,10 @@ async function scanAndRecoverBackups() {
     const selected = foundBackups[parseInt(choice) - 1];
     if (selected) {
       if (selected.source === 'cloud') {
-        if (selected.cloudData.settings) settings = { ...settings, ...selected.cloudData.settings };
-        if (selected.cloudData.revisions && selected.cloudData.revisions.length > 0) revisions = selected.cloudData.revisions;
-        if (selected.cloudData.payments && selected.cloudData.payments.length > 0) payments = selected.cloudData.payments;
-        setSyncKey(selected.key);
+        applyCloudData(selected.cloudData);
+        currentBinId = selected.binId;
+        currentEmail = selected.key;
+        saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
         showToast(`Copia de la nube [${selected.key}] restaurada con éxito`);
       } else {
         if (selected.type === 'revisiones') {
@@ -1162,9 +1174,10 @@ async function scanAndRecoverBackups() {
           payments = selected.data;
           showToast(`Restaurados ${selected.count} meses locales`);
         }
+        saveStateToStorage();
+        recomputeBalances();
+        updateDashboardUI();
       }
-      saveStateToStorage();
-      recomputeBalances();
       updateDashboardUI();
     }
   }
@@ -1466,9 +1479,11 @@ function fillSettingsInputs() {
     document.getElementById('cfg-interest-rate').value = (settings.annualInterestRate || 1.85).toFixed(2);
     document.getElementById('cfg-laura-pct').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
     document.getElementById('cfg-rak-pct').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
-    document.getElementById('cfg-debt-laura').value = (settings.internalDebtLaura || 33486).toFixed(2);
-    document.getElementById('cfg-debt-rak').value = (settings.internalDebtRak || 68266).toFixed(2);
-    document.getElementById('sync-user-id').value = currentSyncKey;
+    document.getElementById('cfg-debt-laura').value = (settings.internalDebtLaura || 53500.0).toFixed(2);
+    document.getElementById('cfg-debt-rak').value = (settings.internalDebtRak || 68266.32).toFixed(2);
+    if (document.getElementById('sync-user-id')) {
+      document.getElementById('sync-user-id').value = currentEmail;
+    }
   }
 }
 
@@ -1613,15 +1628,17 @@ function saveSettingsHandler(e) {
   settings.internalDebtLaura = Number(document.getElementById('cfg-debt-laura').value) || 0;
   settings.internalDebtRak = Number(document.getElementById('cfg-debt-rak').value) || 0;
 
-  const newKey = document.getElementById('sync-user-id').value;
-  if (newKey && newKey !== currentSyncKey) {
-    setSyncKey(newKey);
+  const newKey = document.getElementById('sync-user-id')?.value;
+  if (newKey && newKey !== currentEmail) {
+    currentEmail = newKey;
+    saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
   }
 
   recomputeBalances();
   saveStateToStorage();
   updateDashboardUI();
-  showToast("Ajustes guardados");
+  updateSyncUI();
+  showToast("Ajustes guardados y sincronizados");
 }
 
 function handleFilterChange() {
@@ -1691,14 +1708,218 @@ function resetAllData() {
 }
 
 /* ==========================================================
-   FIRESTORE CLOUD REALTIME SYNC & MODAL HANDLERS
+   SECURE MULTI-DEVICE CLOUD REALTIME SYNC & MODAL HANDLERS
    ========================================================== */
-function openSyncModal() {
-  const inputEl = document.getElementById('sync-input-key');
-  if (inputEl) inputEl.value = currentSyncKey;
-  
+let cloudSyncTimeout = null;
+let lastCloudTimestampText = '';
+
+function scheduleCloudSync(delayMs = 250) {
+  if (isSyncingIncoming) return;
+  if (cloudSyncTimeout) clearTimeout(cloudSyncTimeout);
+  cloudSyncTimeout = setTimeout(() => {
+    syncToCloud();
+  }, delayMs);
+}
+
+function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
+  const userEl = document.getElementById('banner-sync-user');
+  if (userEl) userEl.textContent = currentEmail;
+
   const activeLabel = document.getElementById('sync-active-label');
-  if (activeLabel) activeLabel.textContent = currentSyncKey;
+  if (activeLabel) activeLabel.textContent = currentEmail;
+
+  const inputEmail = document.getElementById('sync-input-email');
+  if (inputEmail && !inputEmail.value) inputEmail.value = currentEmail;
+
+  const statusEl = document.getElementById('banner-sync-status');
+  if (statusEl) {
+    statusEl.textContent = statusText;
+    statusEl.style.color = dotColor;
+  }
+
+  const dotEl = document.getElementById('banner-sync-dot');
+  if (dotEl) {
+    dotEl.style.background = dotColor;
+  }
+
+  const timeEl = document.getElementById('banner-sync-time');
+  const modalTimeEl = document.getElementById('sync-modal-last-time');
+  const timeToShow = lastCloudTimestampText || new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+  if (timeEl) timeEl.textContent = timeToShow;
+  if (modalTimeEl) modalTimeEl.textContent = timeToShow;
+
+  const badge = document.getElementById('sync-status-badge');
+  if (badge) {
+    badge.textContent = currentPasswordHash ? 'Protegida con Contraseña' : 'Sin Contraseña';
+    badge.style.color = currentPasswordHash ? '#10b981' : '#f59e0b';
+    badge.style.background = currentPasswordHash ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)';
+  }
+
+  const lockBadge = document.getElementById('banner-lock-badge');
+  if (lockBadge) {
+    lockBadge.textContent = currentPasswordHash ? '🔒 Protegida' : '🔓 Sin clave';
+    lockBadge.style.color = currentPasswordHash ? '#84cc16' : '#f59e0b';
+  }
+}
+
+async function initCloudSync() {
+  updateSyncUI('Conectando...', '#f59e0b');
+  try {
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.updatedAt) {
+        lastCloudTimestampText = data.lastUpdatedText || new Date(data.updatedAt).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+        
+        // If account has password set, verify credentials
+        if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
+          updateSyncUI('Requiere Clave', '#f59e0b');
+          openSyncModal();
+          showSyncModalMsg('Introduce tu contraseña para acceder y sincronizar los datos de tu cuenta.', 'warning');
+          return;
+        }
+
+        // Apply cloud data if newer or first load
+        if (data.updatedAt > localLastSyncTime || (!payments || payments.length === 0)) {
+          applyCloudData(data);
+        }
+        updateSyncUI('En Tiempo Real', '#10b981');
+      }
+    }
+  } catch (err) {
+    console.warn("Cloud init notice:", err);
+    updateSyncUI('Sin Conexión Nube', '#ef4444');
+  }
+}
+
+function applyCloudData(data) {
+  isSyncingIncoming = true;
+  localLastSyncTime = data.updatedAt || Date.now();
+  lastCloudTimestampText = data.lastUpdatedText || new Date(localLastSyncTime).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+
+  if (data.settings) settings = { ...settings, ...data.settings };
+  if (Array.isArray(data.revisions) && data.revisions.length > 0) revisions = data.revisions;
+  if (Array.isArray(data.payments) && data.payments.length > 0) payments = data.payments;
+
+  try {
+    const cfgStr = JSON.stringify(settings);
+    const revStr = JSON.stringify(revisions);
+    const payStr = JSON.stringify(payments);
+    localStorage.setItem('hipoteca_cfg_v7', cfgStr);
+    localStorage.setItem('hipoteca_cfg_v6', cfgStr);
+    localStorage.setItem('hipoteca_revs_v7', revStr);
+    localStorage.setItem('hipoteca_revs_v6', revStr);
+    localStorage.setItem('hipoteca_payments_v7', payStr);
+    localStorage.setItem('hipoteca_payments_v6', payStr);
+  } catch (e) {}
+
+  recomputeBalances();
+  updateDashboardUI();
+  updateSyncUI('En Tiempo Real', '#10b981');
+  isSyncingIncoming = false;
+}
+
+async function syncToCloud() {
+  if (isSyncingIncoming) return;
+  updateSyncUI('Guardando en Nube...', '#f59e0b');
+
+  const now = Date.now();
+  localLastSyncTime = now;
+  lastCloudTimestampText = new Date(now).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+
+  const payload = {
+    account: currentEmail,
+    passwordHash: currentPasswordHash || '',
+    updatedAt: now,
+    lastUpdatedText: lastCloudTimestampText,
+    settings,
+    revisions,
+    payments
+  };
+
+  try {
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      updateSyncUI('En Tiempo Real', '#10b981');
+    } else {
+      updateSyncUI('Error al Guardar', '#ef4444');
+    }
+  } catch (err) {
+    console.warn("Cloud save notice:", err);
+    updateSyncUI('Sin Conexión Nube', '#ef4444');
+  }
+}
+
+function startRealtimePoller() {
+  if (realtimePollInterval) clearInterval(realtimePollInterval);
+  realtimePollInterval = setInterval(async () => {
+    if (isSyncingIncoming) return;
+    try {
+      const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.updatedAt && data.updatedAt > localLastSyncTime) {
+          // If remote password hash is set and does not match our session, do not apply
+          if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
+            updateSyncUI('Requiere Clave', '#f59e0b');
+            return;
+          }
+          applyCloudData(data);
+          showToast(`⚡ Actualización recibida de otro dispositivo (${lastCloudTimestampText})`);
+        }
+      }
+    } catch (err) {
+      // Background poll network glitch, non-fatal
+    }
+  }, 3500);
+}
+
+async function triggerManualSync() {
+  const icon = document.getElementById('sync-spin-icon');
+  if (icon) icon.classList.add('spin-active');
+  updateSyncUI('Sincronizando...', '#f59e0b');
+
+  try {
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.updatedAt) {
+        if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
+          updateSyncUI('Requiere Clave', '#f59e0b');
+          openSyncModal();
+          showSyncModalMsg('Introduce tu contraseña para sincronizar esta cuenta.', 'warning');
+          return;
+        }
+        applyCloudData(data);
+        showToast(`✅ Sincronizado con la nube (${lastCloudTimestampText})`);
+      }
+    } else {
+      showToast('⚠️ No se pudo conectar con la nube.');
+    }
+  } catch (err) {
+    showToast('⚠️ Error de conexión con la nube.');
+  } finally {
+    if (icon) icon.classList.remove('spin-active');
+  }
+}
+
+function openSyncModal() {
+  const emailInput = document.getElementById('sync-input-email');
+  if (emailInput) emailInput.value = currentEmail;
+
+  const pwdInput = document.getElementById('sync-input-password');
+  if (pwdInput) pwdInput.value = '';
+
+  const activeLabel = document.getElementById('sync-active-label');
+  if (activeLabel) activeLabel.textContent = currentEmail;
+
+  const modalTimeEl = document.getElementById('sync-modal-last-time');
+  if (modalTimeEl) modalTimeEl.textContent = lastCloudTimestampText || '--';
 
   const modal = document.getElementById('sync-modal');
   if (modal) modal.classList.add('active');
@@ -1709,147 +1930,172 @@ function closeSyncModal() {
   if (modal) modal.classList.remove('active');
 }
 
-function handleSyncConnect(e) {
+function togglePasswordVisibility() {
+  const input = document.getElementById('sync-input-password');
+  if (input) {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+}
+
+function showSyncModalMsg(text, type = 'info') {
+  const msgEl = document.getElementById('sync-modal-msg');
+  if (!msgEl) return;
+  msgEl.style.display = 'block';
+  msgEl.textContent = text;
+  if (type === 'error') {
+    msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+    msgEl.style.color = '#fca5a5';
+    msgEl.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+  } else if (type === 'warning') {
+    msgEl.style.background = 'rgba(245, 158, 11, 0.15)';
+    msgEl.style.color = '#fcd34d';
+    msgEl.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+  } else {
+    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+    msgEl.style.color = '#86efac';
+    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+  }
+}
+
+async function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const inputEl = document.getElementById('sync-input-key');
-  const key = inputEl ? inputEl.value.trim() : '';
-  if (key) {
-    setSyncKey(key);
-    closeSyncModal();
-    showToast("Conectado a: " + key);
+  const emailInput = document.getElementById('sync-input-email');
+  const pwdInput = document.getElementById('sync-input-password');
+
+  const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  const pwd = pwdInput ? pwdInput.value.trim() : '';
+
+  if (!email) {
+    showSyncModalMsg('Introduce un correo electrónico válido.', 'error');
+    return;
   }
-}
-
-function updateSyncUI() {
-  const pillLabel = document.getElementById('sync-pill-label');
-  if (pillLabel) pillLabel.textContent = currentSyncKey;
-
-  const bannerText = document.getElementById('banner-sync-text');
-  if (bannerText) bannerText.textContent = `Sincronización activa (${currentSyncKey})`;
-
-  const activeLabel = document.getElementById('sync-active-label');
-  if (activeLabel) activeLabel.textContent = currentSyncKey;
-
-  const badge = document.getElementById('sync-status-badge');
-  if (badge) {
-    const isCustom = currentSyncKey !== DEFAULT_SYNC_KEY;
-    badge.textContent = isCustom ? "Conectado" : "Sistema base";
-    badge.style.color = isCustom ? "#10b981" : "#fcd34d";
-    badge.style.background = isCustom ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)";
+  if (!pwd) {
+    showSyncModalMsg('Introduce tu contraseña.', 'error');
+    return;
   }
 
-  const syncUserId = document.getElementById('sync-user-id');
-  if (syncUserId) syncUserId.value = currentSyncKey;
-}
-
-function promptChangeSyncKey() {
-  openSyncModal();
-}
-
-let isSyncingIncoming = false;
-
-function connectFirestoreSync(key) {
-  if (!window.firebaseSync || !window.firebaseSync.db) return;
-  const { db, doc, onSnapshot, getDoc, setDoc } = window.firebaseSync;
-
-  if (firestoreUnsubscribe) {
-    try { firestoreUnsubscribe(); } catch (e) {}
-  }
+  showSyncModalMsg('Verificando credenciales en la nube...', 'info');
 
   try {
-    const docRef = doc(db, 'mortgage_accounts', key);
+    const pwdHash = await hashPassword(pwd);
 
-    firestoreUnsubscribe = onSnapshot(docRef, async (docSnap) => {
-      if (docSnap && docSnap.exists()) {
-        const data = docSnap.data();
-        if (data) {
-          isSyncingIncoming = true;
-          if (data.settings) settings = { ...settings, ...data.settings };
-          if (Array.isArray(data.revisions) && data.revisions.length > 0) {
-            revisions = data.revisions;
-          }
-          if (Array.isArray(data.payments) && data.payments.length > 0) {
-            payments = data.payments;
-          }
-          
-          if (data.updatedAt) {
-            localStorage.setItem('hipoteca_last_sync_time', data.updatedAt.toString());
-          }
-
-          try {
-            const cfgStr = JSON.stringify(settings);
-            const revStr = JSON.stringify(revisions);
-            const payStr = JSON.stringify(payments);
-            localStorage.setItem('hipoteca_cfg_v7', cfgStr);
-            localStorage.setItem('hipoteca_cfg_v6', cfgStr);
-            localStorage.setItem('hipoteca_revs_v7', revStr);
-            localStorage.setItem('hipoteca_revs_v6', revStr);
-            localStorage.setItem('hipoteca_payments_v7', payStr);
-            localStorage.setItem('hipoteca_payments_v6', payStr);
-          } catch(e) {}
-
-          recomputeBalances();
-          updateDashboardUI();
-          isSyncingIncoming = false;
-        }
-      } else {
-        // If document doesn't exist yet for this key, check if legacy account exists
-        let migrated = false;
-        if (key !== 'mi_sistema_hipoteca') {
-          try {
-            const altSnap = await getDoc(doc(db, 'mortgage_accounts', 'mi_sistema_hipoteca'));
-            if (altSnap.exists()) {
-              const altData = altSnap.data();
-              if (altData && ((altData.payments && altData.payments.length > 0) || (altData.revisions && altData.revisions.length > 0))) {
-                isSyncingIncoming = true;
-                if (altData.settings) settings = { ...settings, ...altData.settings };
-                if (altData.revisions && altData.revisions.length > 0) revisions = altData.revisions;
-                if (altData.payments && altData.payments.length > 0) payments = altData.payments;
-                saveStateToStorage();
-                recomputeBalances();
-                updateDashboardUI();
-                isSyncingIncoming = false;
-                migrated = true;
-                syncToFirestoreIfAvailable(true);
-              }
-            }
-          } catch(e) {
-            console.warn("Migration check notice:", e);
-          }
-        }
-        if (!migrated) {
-          syncToFirestoreIfAvailable(true);
+    // 1. Resolve bin for email from registry
+    let binId = currentBinId;
+    if (email === DEFAULT_USER_EMAIL || email === 'ferjrm') {
+      binId = DEFAULT_USER_BIN;
+    } else {
+      const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+      if (regRes.ok) {
+        const reg = await regRes.json();
+        if (reg.users && reg.users[email]) {
+          binId = reg.users[email];
+        } else {
+          // Create new user bin
+          const newBinRes = await fetch('https://extendsclass.com/api/json-storage/bin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account: email,
+              passwordHash: pwdHash,
+              updatedAt: Date.now(),
+              lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+              settings,
+              revisions,
+              payments
+            })
+          });
+          const newBin = await newBinRes.json();
+          binId = newBin.id;
+          reg.users = reg.users || {};
+          reg.users[email] = binId;
+          await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reg)
+          });
         }
       }
-    }, err => {
-      console.warn("Firestore sync listener notice:", err);
-    });
+    }
+
+    // 2. Fetch cloud data for bin
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`);
+    if (!binRes.ok) {
+      showSyncModalMsg('Error al conectar con la cuenta en la nube.', 'error');
+      return;
+    }
+
+    const cloudData = await binRes.json();
+
+    // 3. Password Verification
+    if (cloudData.passwordHash) {
+      if (cloudData.passwordHash !== pwdHash) {
+        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta. Acceso denegado.', 'error');
+        return;
+      }
+    } else {
+      // First time setting password on this account
+      cloudData.passwordHash = pwdHash;
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cloudData)
+      });
+      showToast('🔒 Contraseña configurada con éxito. Tu cuenta ahora está protegida.');
+    }
+
+    // Authentication successful
+    currentEmail = email;
+    currentPasswordHash = pwdHash;
+    currentBinId = binId;
+    saveStoredAuth(email, pwdHash, binId);
+
+    applyCloudData(cloudData);
+    closeSyncModal();
+    showToast(`✅ Sesión iniciada como ${email} (Sincronizado)`);
   } catch (err) {
-    console.warn("Firestore connection notice:", err);
+    console.error("Login notice:", err);
+    showSyncModalMsg('Error de conexión al verificar contraseña.', 'error');
   }
 }
 
-function syncToFirestoreIfAvailable(force = false) {
-  if (isSyncingIncoming) return;
-  if (!window.firebaseSync || !window.firebaseSync.db) return;
+async function promptChangePassword() {
+  const oldPwd = prompt("Introduce tu contraseña actual:");
+  if (oldPwd === null) return;
+  const oldHash = await hashPassword(oldPwd);
 
-  const { db, doc, setDoc } = window.firebaseSync;
-  const key = currentSyncKey || DEFAULT_SYNC_KEY;
-  const now = Date.now();
-  localStorage.setItem('hipoteca_last_sync_time', now.toString());
+  if (currentPasswordHash && oldHash !== currentPasswordHash) {
+    alert("❌ La contraseña actual no coincide.");
+    return;
+  }
 
-  try {
-    const docRef = doc(db, 'mortgage_accounts', key);
-    setDoc(docRef, {
-      settings,
-      revisions,
-      payments,
-      updatedAt: now
-    }, { merge: true }).catch(err => {
-      console.warn("Firestore save notice:", err);
-    });
-  } catch (err) {
-    console.warn("Firestore setDoc notice:", err);
+  const newPwd = prompt("Introduce tu NUEVA contraseña:");
+  if (!newPwd || newPwd.trim().length < 4) {
+    alert("La nueva contraseña debe tener al menos 4 caracteres.");
+    return;
+  }
+
+  const confirmPwd = prompt("Confirma tu NUEVA contraseña:");
+  if (newPwd !== confirmPwd) {
+    alert("❌ Las contraseñas no coinciden.");
+    return;
+  }
+
+  const newHash = await hashPassword(newPwd);
+  currentPasswordHash = newHash;
+  saveStoredAuth(currentEmail, newHash, currentBinId);
+  await syncToCloud();
+  updateSyncUI();
+  showToast("🔐 Contraseña actualizada con éxito en la nube");
+  closeSyncModal();
+}
+
+function handleLogout() {
+  if (confirm("¿Deseas cerrar sesión en este dispositivo?")) {
+    currentPasswordHash = '';
+    saveStoredAuth(currentEmail, '', currentBinId);
+    updateSyncUI('Requiere Clave', '#f59e0b');
+    closeSyncModal();
+    showToast("Sesión cerrada. Introduce tu contraseña para volver a sincronizar.");
   }
 }
 
@@ -1872,5 +2118,5 @@ function showToast(msg) {
   document.body.appendChild(toast);
   setTimeout(() => {
     toast.remove();
-  }, 2400);
+  }, 2600);
 }
