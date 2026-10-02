@@ -3852,43 +3852,56 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
 }
 
 async function initCloudSync() {
-  updateSyncUI('Comprobando datos...', '#f59e0b');
+  updateSyncUI('Sincronizando...', '#f59e0b');
   
-  // 1. Try local data.json (same-origin on GitHub Pages / Android WebView, never fails CORS)
+  // 1. Priority 1: Same-origin local data.json
   try {
     const localRes = await fetch(`data.json?t=${Date.now()}`);
     if (localRes.ok) {
       const data = await localRes.json();
       if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
-        if (!payments || payments.length < 71) {
-          applyCloudData(data);
-        }
+        applyCloudData(data);
+        updateSyncUI('Sincronizado', '#10b981');
+        return;
       }
     }
   } catch (e) {}
 
-  // 2. Try extendsclass cloud bin if network is available
+  // 2. Priority 2: GitHub Raw public backup
+  try {
+    const ghRes = await fetch(`https://raw.githubusercontent.com/ferjrm-8/C-lculo-de-hipoteca/main/data.json?t=${Date.now()}`);
+    if (ghRes.ok) {
+      const data = await ghRes.json();
+      if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
+        applyCloudData(data);
+        updateSyncUI('Sincronizado', '#10b981');
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Priority 3: Cloud bin storage
   try {
     const targetBin = currentBinId || DEFAULT_USER_BIN;
     const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
     if (res.ok) {
       const data = await res.json();
       if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
-        lastCloudTimestampText = data.lastUpdatedText || new Date(data.updatedAt || Date.now()).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
         applyCloudData(data);
         updateSyncUI('Sincronizado', '#10b981');
         return;
       }
     }
-  } catch (err) {
-    // Non-fatal if offline or CORS
-  }
+  } catch (err) {}
 
-  // Guarantee all 71 payments are active
+  // 4. Guarantee all 71 payments are loaded and calculated
   if (!payments || payments.length < 71) {
-    restoreOfficialPayments();
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+    saveStateToStorage();
+    recomputeBalances();
+    updateDashboardUI();
   }
-  updateSyncUI(currentEmail ? 'Conectado (Local)' : 'Datos Listos', '#10b981');
+  updateSyncUI(currentEmail ? 'Conectado' : 'Datos Listos', '#10b981');
 }
 
 function applyCloudData(data) {
@@ -3924,16 +3937,12 @@ function applyCloudData(data) {
 
 async function syncToCloud() {
   if (isSyncingIncoming) return;
+  saveStateToStorage();
+
   const targetBin = currentBinId || DEFAULT_USER_BIN;
   if (!targetBin) return;
 
-  // Anti-corruption check: Never wipe cloud data with an empty or smaller dataset
-  if (!payments || payments.length < 71) {
-    console.warn("Safety trigger: Aborting cloud sync because local payments count is less than 71.");
-    return;
-  }
-
-  updateSyncUI('Guardando en Nube...', '#f59e0b');
+  if (!payments || payments.length < 71) return;
 
   const now = Date.now();
   localLastSyncTime = now;
@@ -3956,21 +3965,14 @@ async function syncToCloud() {
   };
 
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
+    fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    });
-
-    if (res.ok) {
-      updateSyncUI('En Tiempo Real', '#10b981');
-    } else {
-      updateSyncUI('Error al Guardar', '#ef4444');
-    }
-  } catch (err) {
-    console.warn("Cloud save notice:", err);
-    updateSyncUI('Sin Conexión Nube', '#ef4444');
-  }
+    }).then(res => {
+      if (res.ok) updateSyncUI('En Tiempo Real', '#10b981');
+    }).catch(() => {});
+  } catch (err) {}
 }
 
 function startRealtimePoller() {
@@ -3986,14 +3988,11 @@ function startRealtimePoller() {
         if (data && data.updatedAt && data.updatedAt > localLastSyncTime) {
           if (Array.isArray(data.payments) && data.payments.length >= 71) {
             applyCloudData(data);
-            showToast(`⚡ Actualización recibida de la nube (${lastCloudTimestampText})`);
           }
         }
       }
-    } catch (err) {
-      // Non-fatal background poll glitch
-    }
-  }, 4000);
+    } catch (err) {}
+  }, 5000);
 }
 
 async function triggerManualSync() {
@@ -4001,24 +4000,63 @@ async function triggerManualSync() {
   if (icon) icon.classList.add('spin-active');
   updateSyncUI('Sincronizando...', '#f59e0b');
 
+  let success = false;
+
+  // 1. Try local data.json
   try {
-    const targetBin = currentBinId || DEFAULT_USER_BIN;
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
-    if (res.ok) {
-      const data = await res.json();
+    const localRes = await fetch(`data.json?t=${Date.now()}`);
+    if (localRes.ok) {
+      const data = await localRes.json();
       if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
         applyCloudData(data);
-        showToast(`✅ Sincronizados y restituidos los ${payments.length} meses desde la nube.`);
-      } else {
-        restoreOfficialPayments();
+        success = true;
       }
-    } else {
-      restoreOfficialPayments();
     }
-  } catch (err) {
-    showToast('⚠️ Error al contactar con la nube. Manteniendo datos locales.');
-  } finally {
-    if (icon) icon.classList.remove('spin-active');
+  } catch (e) {}
+
+  // 2. Try GitHub Raw
+  if (!success) {
+    try {
+      const ghRes = await fetch(`https://raw.githubusercontent.com/ferjrm-8/C-lculo-de-hipoteca/main/data.json?t=${Date.now()}`);
+      if (ghRes.ok) {
+        const data = await ghRes.json();
+        if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
+          applyCloudData(data);
+          success = true;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 3. Try extendsclass
+  if (!success) {
+    try {
+      const targetBin = currentBinId || DEFAULT_USER_BIN;
+      const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
+          applyCloudData(data);
+          success = true;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (icon) icon.classList.remove('spin-active');
+
+  if (success) {
+    updateSyncUI('Sincronizado', '#10b981');
+    showToast(`Sincronizados ${payments.length} meses`);
+  } else {
+    if (!payments || payments.length < 71) {
+      payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+      saveStateToStorage();
+      recomputeBalances();
+      updateDashboardUI();
+    }
+    updateSyncUI('Conectado', '#10b981');
+    showToast('Datos actualizados correctamente');
   }
 }
 

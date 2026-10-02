@@ -1835,7 +1835,7 @@
             </div>
           </div>
 
-          <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px;">
+          <button type="button" onclick="handleSyncLogin(event)" id="btn-submit-login" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px; cursor: pointer;">
             Entrar a mi Cuenta
           </button>
         </form>
@@ -1886,7 +1886,7 @@
             </div>
           </div>
 
-          <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px;">
+          <button type="button" onclick="handleCreateUser(event)" id="btn-submit-register" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px; cursor: pointer;">
             ✨ Crear Cuenta y Conectar
           </button>
         </form>
@@ -1940,7 +1940,7 @@
               <label style="color: #cbd5e1; font-size: 11px;">Confirmar Nueva Contraseña:</label>
               <input type="password" id="pwd-confirm" minlength="4" required class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d;" placeholder="Repite la contraseña">
             </div>
-            <button type="submit" id="btn-submit-change-pwd" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: #1b2e1d; color: #10b981; border-color: rgba(16,185,129,0.4); font-weight: 700; padding: 8px;">
+            <button type="button" onclick="handleChangePassword(event)" id="btn-submit-change-pwd" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: #1b2e1d; color: #10b981; border-color: rgba(16,185,129,0.4); font-weight: 700; padding: 8px; cursor: pointer;">
               🔐 Actualizar Contraseña
             </button>
           </form>
@@ -1957,7 +1957,7 @@
               <label style="color: #cbd5e1; font-size: 11px;">Introduce tu contraseña para confirmar:</label>
               <input type="password" id="delete-confirm-pwd" required class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d; border-color: rgba(239, 68, 68, 0.4);" placeholder="Tu contraseña">
             </div>
-            <button type="submit" id="btn-submit-delete-account" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.5); font-weight: 700; padding: 8px;">
+            <button type="button" onclick="handleDeleteAccount(event)" id="btn-submit-delete-account" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.5); font-weight: 700; padding: 8px; cursor: pointer;">
               🗑️ Eliminar Cuenta
             </button>
           </form>
@@ -1974,6 +1974,6 @@
   </div>
 
   <!-- JAVASCRIPT LOGIC & COMPUTATION ENGINE -->
-  <script src="app.js?v=20261002_09"></script>
+  <script src="app.js?v=20261002_10"></script>
 </body>
 </html>
