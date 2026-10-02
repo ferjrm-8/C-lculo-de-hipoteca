@@ -4056,7 +4056,7 @@ function closeSyncModal() {
 /* ==========================================================
    AUTHENTICATION: LOGIN
    ========================================================== */
-async function handleSyncLogin(e) {
+function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
   const emailInput = document.getElementById('sync-input-email');
   const pwdInput = document.getElementById('sync-input-password');
@@ -4073,60 +4073,49 @@ async function handleSyncLogin(e) {
     rawEmail = DEFAULT_USER_EMAIL;
   }
 
-  showSyncModalMsg('Iniciando sesión y asegurando tus datos...', 'info');
-
   const pwdHash = pwd ? hashPassword(pwd) : '';
   const binId = DEFAULT_USER_BIN;
 
-  // Attempt cloud sync if reachable, but NEVER block or throw
-  try {
-    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`);
-    if (binRes.ok) {
-      const cloudData = await binRes.json();
-      if (cloudData && Array.isArray(cloudData.payments) && cloudData.payments.length >= 71) {
-        applyCloudData(cloudData);
-      }
-    }
-  } catch (err) {
-    console.warn("Cloud connection notice (offline / CORS):", err);
-  }
-
-  // Ensure local session is established and 71 payments are active
+  // Immediate local activation without freezing on network
   currentEmail = rawEmail;
   currentPasswordHash = pwdHash;
   currentBinId = binId;
   saveStoredAuth(rawEmail, pwdHash, binId);
 
+  // Guarantee all 71 payments are loaded and calculated
   if (!payments || payments.length < 71) {
-    restoreOfficialPayments();
-  } else {
-    recomputeBalances();
-    updateDashboardUI();
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+    saveStateToStorage();
   }
-
+  recomputeBalances();
+  updateDashboardUI();
   updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  showToast(`✅ Conectado como ${rawEmail}. Los 71 meses están activos.`);
+  showToast(`✅ Sesión iniciada como ${rawEmail}`);
+
+  // Non-blocking background sync attempt with 2s timeout
+  setTimeout(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (binRes.ok) {
+        const cloudData = await binRes.json();
+        if (cloudData && Array.isArray(cloudData.payments) && cloudData.payments.length >= 71) {
+          applyCloudData(cloudData);
+        }
+      }
+    } catch (err) {}
+  }, 100);
 }
 
 /* ==========================================================
    AUTHENTICATION: RESET / UNLOCK ACCESS
    ========================================================== */
-async function resetAccountPassword(email, binId) {
+function resetAccountPassword(email, binId) {
   const targetEmail = (email || currentEmail || DEFAULT_USER_EMAIL).trim().toLowerCase();
   const targetBinId = binId || currentBinId || DEFAULT_USER_BIN;
-
-  showSyncModalMsg('Restableciendo acceso...', 'info');
-
-  try {
-    await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBinId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ passwordHash: '', updatedAt: Date.now() })
-    });
-  } catch (e) {
-    // Non-fatal if offline / CORS
-  }
 
   currentEmail = targetEmail;
   currentPasswordHash = '';
@@ -4134,15 +4123,14 @@ async function resetAccountPassword(email, binId) {
   saveStoredAuth(targetEmail, '', targetBinId);
 
   if (!payments || payments.length < 71) {
-    restoreOfficialPayments();
-  } else {
-    recomputeBalances();
-    updateDashboardUI();
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+    saveStateToStorage();
   }
-
-  updateSyncUI('Acceso Libre', '#10b981');
+  recomputeBalances();
+  updateDashboardUI();
+  updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  showToast(`🔓 Acceso restablecido con éxito. Conectado como ${targetEmail}`);
+  showToast(`🔓 Acceso restablecido como ${targetEmail}`);
 }
 
 function handleQuickUnlock() {
@@ -4162,13 +4150,12 @@ function switchToLoginFor(email) {
     pwdInput.value = '';
     pwdInput.focus();
   }
-  showSyncModalMsg(`Introduce la contraseña de ${email} o pulsa en "Restablecer acceso" si no la recuerdas.`, 'info');
 }
 
 /* ==========================================================
    AUTHENTICATION: CREATE NEW USER
    ========================================================== */
-async function handleCreateUser(e) {
+function handleCreateUser(e) {
   if (e && e.preventDefault) e.preventDefault();
   const emailInput = document.getElementById('sync-reg-email');
   const pwdInput = document.getElementById('sync-reg-password');
@@ -4194,8 +4181,6 @@ async function handleCreateUser(e) {
     return;
   }
 
-  showSyncModalMsg('Creando cuenta y preparando tus datos...', 'info');
-
   const pwdHash = pwd ? hashPassword(pwd) : '';
   const binId = DEFAULT_USER_BIN;
 
@@ -4205,15 +4190,13 @@ async function handleCreateUser(e) {
   saveStoredAuth(rawEmail, pwdHash, binId);
 
   if (!payments || payments.length < 71) {
-    restoreOfficialPayments();
-  } else {
-    recomputeBalances();
-    updateDashboardUI();
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+    saveStateToStorage();
   }
-
+  recomputeBalances();
+  updateDashboardUI();
   updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  startRealtimePoller();
   showToast(`🎉 ¡Cuenta creada con éxito! Conectado como ${rawEmail}`);
 }
 

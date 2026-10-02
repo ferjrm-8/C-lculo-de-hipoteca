@@ -1801,18 +1801,15 @@
       </div>
 
       <!-- Segmented Tab Navigation -->
-      <div style="display: flex; background: #0c140d; border: 1px solid #233725; border-radius: 10px; padding: 4px; margin-bottom: 16px; gap: 4px; flex-wrap: wrap;">
-        <button id="sync-tab-btn-login" type="button" onclick="switchSyncTab('login')" class="modal-tab-btn active" style="flex: 1; min-width: 100px;">
+      <div style="display: flex; background: #0c140d; border: 1px solid #233725; border-radius: 10px; padding: 4px; margin-bottom: 16px; gap: 4px;">
+        <button id="sync-tab-btn-login" type="button" onclick="switchSyncTab('login')" class="modal-tab-btn active" style="flex: 1;">
           🔑 Iniciar Sesión
         </button>
-        <button id="sync-tab-btn-register" type="button" onclick="switchSyncTab('register')" class="modal-tab-btn" style="flex: 1; min-width: 100px;">
+        <button id="sync-tab-btn-register" type="button" onclick="switchSyncTab('register')" class="modal-tab-btn" style="flex: 1;">
           ✨ Crear Cuenta
         </button>
-        <button id="sync-tab-btn-account" type="button" onclick="switchSyncTab('account')" class="modal-tab-btn" style="flex: 1; min-width: 100px;">
+        <button id="sync-tab-btn-account" type="button" onclick="switchSyncTab('account')" class="modal-tab-btn" style="flex: 1;">
           ⚙️ Mi Cuenta
-        </button>
-        <button id="sync-tab-btn-transfer" type="button" onclick="switchSyncTab('transfer')" class="modal-tab-btn" style="flex: 1; min-width: 100px;">
-          📲 Transferir / Copias
         </button>
       </div>
 
@@ -1987,43 +1984,6 @@
         </div>
       </div>
 
-      <!-- TAB 4: TRANSFERIR & COPIAS DIRECTAS -->
-      <div id="sync-view-transfer" style="display: none;">
-        <div style="background: #162317; border: 1px solid #2d4430; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
-          <h4 style="font-size: 13px; font-weight: 700; color: #f1f7ef; margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px;">
-            📲 Sincronización Directa entre Móvil, Tablet y PC
-          </h4>
-          <p style="font-size: 11px; color: #8ca48a; margin: 0 0 12px 0; line-height: 1.4;">
-            Transfiere tus 71 meses al instante entre cualquiera de tus dispositivos sin depender de servidores externos:
-          </p>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <button type="button" onclick="exportSyncCode()" class="btn btn-primary btn-sm" style="background: #10b981; border: none; font-weight: 700; padding: 9px 14px; justify-content: center; font-size: 12px;">
-              📋 1. Copiar Código de Sincronización (Todos tus datos)
-            </button>
-            <button type="button" onclick="importSyncCodePrompt()" class="btn btn-secondary btn-sm" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); padding: 9px 14px; justify-content: center; font-size: 12px;">
-              📥 2. Pegar Código en este Dispositivo
-            </button>
-          </div>
-        </div>
-
-        <div style="background: #162317; border: 1px solid #2d4430; border-radius: 10px; padding: 14px;">
-          <h4 style="font-size: 13px; font-weight: 700; color: #f1f7ef; margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px;">
-            💾 Archivo de Copia de Seguridad JSON
-          </h4>
-          <p style="font-size: 11px; color: #8ca48a; margin: 0 0 12px 0; line-height: 1.4;">
-            Guarda una copia física de todos tus datos en tu móvil o restáurala en cualquier momento.
-          </p>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" onclick="downloadBackupJSON()" class="btn btn-secondary btn-sm" style="color: #84cc16; border-color: rgba(132,204,22,0.4); padding: 7px 12px; font-size: 11px;">
-              💾 Descargar Copia JSON
-            </button>
-            <button type="button" onclick="restoreOfficialPayments()" class="btn btn-secondary btn-sm" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); padding: 7px 12px; font-size: 11px;">
-              🔄 Restaurar 71 Meses Oficiales
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- Footer Close Button -->
       <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
         <button onclick="closeSyncModal()" class="btn btn-secondary" style="background: #162317; border-color: #2d4430; color: #ecf5ea; padding: 7px 18px; font-size: 12px;">
@@ -2034,6 +1994,6 @@
   </div>
 
   <!-- JAVASCRIPT LOGIC & COMPUTATION ENGINE -->
-  <script src="app.js?v=20261002_07"></script>
+  <script src="app.js?v=20261002_08"></script>
 </body>
 </html>
