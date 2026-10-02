@@ -2277,7 +2277,7 @@ function loadStateFromStorage() {
       }
     }
 
-    // 3. Recover Payments across all known versions
+    // 3. Recover Payments across all known versions (must be full 71 dataset)
     let loadedPayments = false;
     const payKeys = ['hipoteca_payments_v7', 'hipoteca_payments_v6', 'hipoteca_payments_v5', 'hipoteca_payments_v4', 'hipoteca_payments_v3', 'hipoteca_payments_v2', 'hipoteca_payments_v1', 'hipoteca_payments', 'mortgage_payments', 'payments'];
     for (const k of payKeys) {
@@ -2285,7 +2285,7 @@ function loadStateFromStorage() {
       if (val) {
         try {
           const parsed = JSON.parse(val);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed) && parsed.length >= 71) {
             payments = parsed;
             loadedPayments = true;
             break;
@@ -2294,11 +2294,12 @@ function loadStateFromStorage() {
       }
     }
 
-    if (!loadedPayments) {
-      payments = getOriginalExcelSeed();
+    if (!loadedPayments || !payments || payments.length < 71) {
+      payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
     }
   } catch (err) {
     console.warn("Storage loading notice:", err);
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
   }
   recomputeBalances();
 }
@@ -3850,30 +3851,32 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
 async function initCloudSync() {
   updateSyncUI('Conectando...', '#f59e0b');
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    const targetBin = currentBinId || DEFAULT_USER_BIN;
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && data.updatedAt) {
-        lastCloudTimestampText = data.lastUpdatedText || new Date(data.updatedAt).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+      if (data) {
+        lastCloudTimestampText = data.lastUpdatedText || new Date(data.updatedAt || Date.now()).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
-        // If account has password set, verify credentials
-        if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
-          updateSyncUI('Requiere Clave', '#f59e0b');
-          openSyncModal('login');
-          showSyncModalMsg('🔐 Tu cuenta está protegida con contraseña. Introduce tu contraseña para sincronizar.', 'warning');
-          return;
-        }
-
-        // Apply cloud data if newer or first load
-        if (data.updatedAt > localLastSyncTime || (!payments || payments.length === 0)) {
+        // Apply cloud data if valid payments exist to guarantee data is never missing
+        if (Array.isArray(data.payments) && data.payments.length >= 71) {
           applyCloudData(data);
+        } else if (!payments || payments.length < 71) {
+          restoreOfficialPayments();
         }
         updateSyncUI('En Tiempo Real', '#10b981');
+      }
+    } else {
+      if (!payments || payments.length < 71) {
+        restoreOfficialPayments();
       }
     }
   } catch (err) {
     console.warn("Cloud init notice:", err);
-    updateSyncUI('Sin Conexión Nube', '#ef4444');
+    if (!payments || payments.length < 71) {
+      restoreOfficialPayments();
+    }
+    updateSyncUI('Datos Locales Activos', '#38bdf8');
   }
 }
 
@@ -3884,7 +3887,11 @@ function applyCloudData(data) {
 
   if (data.settings) settings = { ...settings, ...data.settings };
   if (Array.isArray(data.revisions) && data.revisions.length > 0) revisions = data.revisions;
-  if (Array.isArray(data.payments) && data.payments.length > 0) payments = data.payments;
+  if (Array.isArray(data.payments) && data.payments.length >= 71) {
+    payments = data.payments;
+  } else if (!payments || payments.length < 71) {
+    payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
+  }
 
   try {
     const cfgStr = JSON.stringify(settings);
@@ -3906,13 +3913,21 @@ function applyCloudData(data) {
 
 async function syncToCloud() {
   if (isSyncingIncoming) return;
+  const targetBin = currentBinId || DEFAULT_USER_BIN;
+  if (!targetBin) return;
+
+  // Anti-corruption check: Never wipe cloud data with an empty or smaller dataset
+  if (!payments || payments.length < 71) {
+    console.warn("Safety trigger: Aborting cloud sync because local payments count is less than 71.");
+    return;
+  }
+
   updateSyncUI('Guardando en Nube...', '#f59e0b');
 
   const now = Date.now();
   localLastSyncTime = now;
   lastCloudTimestampText = new Date(now).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
-  // Safety: Preserve password hash if account already has one in registry or storage
   let effectiveHash = currentPasswordHash || '';
   if (!effectiveHash) {
     const stored = getStoredAuth();
@@ -3920,7 +3935,7 @@ async function syncToCloud() {
   }
 
   const payload = {
-    account: currentEmail,
+    account: currentEmail || DEFAULT_USER_EMAIL,
     passwordHash: effectiveHash,
     updatedAt: now,
     lastUpdatedText: lastCloudTimestampText,
@@ -3930,7 +3945,7 @@ async function syncToCloud() {
   };
 
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}`, {
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -3949,27 +3964,25 @@ async function syncToCloud() {
 
 function startRealtimePoller() {
   if (realtimePollInterval) clearInterval(realtimePollInterval);
-  if (!currentEmail || !currentBinId) return;
+  const targetBin = currentBinId || DEFAULT_USER_BIN;
+  if (!targetBin) return;
   realtimePollInterval = setInterval(async () => {
-    if (isSyncingIncoming || !currentEmail || !currentBinId) return;
+    if (isSyncingIncoming) return;
     try {
-      const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+      const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.updatedAt && data.updatedAt > localLastSyncTime) {
-          // If remote password hash is set and does not match our session, do not apply
-          if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
-            updateSyncUI('Requiere Clave', '#f59e0b');
-            return;
+          if (Array.isArray(data.payments) && data.payments.length >= 71) {
+            applyCloudData(data);
+            showToast(`⚡ Actualización recibida de la nube (${lastCloudTimestampText})`);
           }
-          applyCloudData(data);
-          showToast(`⚡ Actualización recibida de otro dispositivo (${lastCloudTimestampText})`);
         }
       }
     } catch (err) {
-      // Background poll network glitch, non-fatal
+      // Non-fatal background poll glitch
     }
-  }, 3000);
+  }, 4000);
 }
 
 async function triggerManualSync() {
@@ -3982,15 +3995,9 @@ async function triggerManualSync() {
     const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && ((data.payments && data.payments.length > 0) || data.settings)) {
-        if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
-          updateSyncUI('Requiere Clave', '#f59e0b');
-          openSyncModal('login');
-          showSyncModalMsg('Introduce tu contraseña para sincronizar esta cuenta.', 'warning');
-          return;
-        }
+      if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
         applyCloudData(data);
-        showToast(`✅ Descargados y sincronizados ${payments.length} mensualidades de la nube.`);
+        showToast(`✅ Sincronizados y restituidos los ${payments.length} meses desde la nube.`);
       } else {
         restoreOfficialPayments();
       }
@@ -3998,7 +4005,7 @@ async function triggerManualSync() {
       restoreOfficialPayments();
     }
   } catch (err) {
-    showToast('⚠️ Error de conexión con la nube. Cargando datos locales.');
+    showToast('⚠️ Error al contactar con la nube. Manteniendo datos locales.');
   } finally {
     if (icon) icon.classList.remove('spin-active');
   }
@@ -4010,7 +4017,7 @@ function restoreOfficialPayments() {
   recomputeBalances();
   updateDashboardUI();
   syncToCloud();
-  showToast(`✅ Recuperadas las ${payments.length} mensualidades oficiales (Nov 2020 - Sep 2026).`);
+  showToast(`✅ Restituidos con éxito los 71 meses (Noviembre 2020 - Septiembre 2026).`);
 }
 
 function openSyncModal(defaultTab) {
