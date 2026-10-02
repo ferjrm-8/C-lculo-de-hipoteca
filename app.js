@@ -19,7 +19,7 @@ let settings = {
   internalDebtRak: 68266.32
 };
 
-let revisions = [
+const INITIAL_REVISIONS_DEFAULT = [
   {
     id: 1,
     name: "Periodo Inicial (Nov 2020)",
@@ -179,8 +179,90 @@ let revisions = [
     rakFee: 487.95,
     lauraInt: 73.92,
     lauraPrin: 158.25
+  },
+  {
+    id: 11,
+    name: "Revisión Febrero 2025",
+    startYear: 2025,
+    startMonth: 2,
+    capTotal: 79220.00,
+    capLaura: 25450.00,
+    pctLaura: 32.12,
+    feeTotal: 720.12,
+    intTotal: 220.00,
+    prinTotal: 500.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 70.66,
+    lauraPrin: 161.51
+  },
+  {
+    id: 12,
+    name: "Revisión Agosto 2025",
+    startYear: 2025,
+    startMonth: 8,
+    capTotal: 76240.00,
+    capLaura: 24480.00,
+    pctLaura: 32.11,
+    feeTotal: 720.12,
+    intTotal: 210.00,
+    prinTotal: 510.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 67.43,
+    lauraPrin: 164.74
+  },
+  {
+    id: 13,
+    name: "Revisión Diciembre 2025",
+    startYear: 2025,
+    startMonth: 12,
+    capTotal: 74280.00,
+    capLaura: 23840.00,
+    pctLaura: 32.09,
+    feeTotal: 720.12,
+    intTotal: 205.00,
+    prinTotal: 515.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 65.78,
+    lauraPrin: 166.39
+  },
+  {
+    id: 14,
+    name: "Revisión Febrero 2026",
+    startYear: 2026,
+    startMonth: 2,
+    capTotal: 73300.00,
+    capLaura: 23520.00,
+    pctLaura: 32.09,
+    feeTotal: 720.12,
+    intTotal: 200.00,
+    prinTotal: 520.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 64.18,
+    lauraPrin: 167.99
+  },
+  {
+    id: 15,
+    name: "Revisión Agosto 2026",
+    startYear: 2026,
+    startMonth: 8,
+    capTotal: 70100.00,
+    capLaura: 22490.00,
+    pctLaura: 32.08,
+    feeTotal: 720.12,
+    intTotal: 190.00,
+    prinTotal: 530.12,
+    lauraFee: 232.17,
+    rakFee: 487.95,
+    lauraInt: 60.95,
+    lauraPrin: 171.22
   }
 ];
+
+let revisions = JSON.parse(JSON.stringify(INITIAL_REVISIONS_DEFAULT));
 
 const INITIAL_PAYMENTS_DEFAULT = [
   {
@@ -2224,6 +2306,44 @@ function saveStoredAuth(email, hash, bin) {
   } catch (e) {}
 }
 
+let firestoreUnsubscribe = null;
+
+function sanitizeSyncKey(val) {
+  if (!val) return 'ferjrm_hotmail_com';
+  return val.trim().toLowerCase().replace(/[\/\\#\$\.\[\]]/g, '_');
+}
+
+function initFirebaseSync() {
+  if (!window.firebaseSync || !window.firebaseSync.db) return;
+
+  const { db, doc, onSnapshot } = window.firebaseSync;
+  const userDocId = sanitizeSyncKey(currentEmail || DEFAULT_USER_EMAIL);
+
+  if (firestoreUnsubscribe) {
+    try { firestoreUnsubscribe(); } catch(e) {}
+    firestoreUnsubscribe = null;
+  }
+
+  try {
+    const docRef = doc(db, 'mortgages', userDocId);
+    firestoreUnsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.payments) && data.payments.length >= 71) {
+          if (data.updatedAt && data.updatedAt > localLastSyncTime) {
+            applyCloudData(data);
+            updateSyncUI('● En Tiempo Real', '#10b981');
+          }
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore snapshot notice:", error);
+    });
+  } catch (err) {
+    console.warn("Firebase sync notice:", err);
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   const auth = getStoredAuth();
   currentEmail = auth.email;
@@ -2236,7 +2356,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize and connect to cloud
   await initCloudSync();
+  initFirebaseSync();
   startRealtimePoller();
+});
+
+window.addEventListener('firebase-sync-ready', () => {
+  initFirebaseSync();
 });
 
 function loadStateFromStorage() {
@@ -2266,18 +2391,23 @@ function loadStateFromStorage() {
     }
 
     // 2. Recover Revisions across all known versions
-    const revKeys = ['hipoteca_revs_v7', 'hipoteca_revs_v6', 'hipoteca_revs_v5', 'hipoteca_revs_v4', 'hipoteca_revs_v3', 'hipoteca_revs_v2', 'hipoteca_revs_v1', 'hipoteca_revs', 'hipoteca_revisions', 'revisions'];
+    let loadedRevisions = false;
+    const revKeys = ['hipoteca_revs_v8', 'hipoteca_revs_v7', 'hipoteca_revs_v6', 'hipoteca_revs_v5', 'hipoteca_revs_v4', 'hipoteca_revs_v3', 'hipoteca_revs_v2', 'hipoteca_revs_v1', 'hipoteca_revs', 'hipoteca_revisions', 'revisions'];
     for (const k of revKeys) {
       const val = localStorage.getItem(k);
       if (val) {
         try {
           const parsed = JSON.parse(val);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed) && parsed.length >= 10) {
             revisions = parsed;
+            loadedRevisions = true;
             break;
           }
         } catch(e) {}
       }
+    }
+    if (!loadedRevisions || !revisions || revisions.length < 10) {
+      revisions = JSON.parse(JSON.stringify(INITIAL_REVISIONS_DEFAULT));
     }
 
     // 3. Recover Payments across all known versions (must be full 71 dataset)
@@ -3910,7 +4040,11 @@ function applyCloudData(data) {
   lastCloudTimestampText = data.lastUpdatedText || new Date(localLastSyncTime).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
   if (data.settings) settings = { ...settings, ...data.settings };
-  if (Array.isArray(data.revisions) && data.revisions.length > 0) revisions = data.revisions;
+  if (Array.isArray(data.revisions) && data.revisions.length >= 10) {
+    revisions = data.revisions;
+  } else if (!revisions || revisions.length < 10) {
+    revisions = JSON.parse(JSON.stringify(INITIAL_REVISIONS_DEFAULT));
+  }
   if (Array.isArray(data.payments) && data.payments.length >= 71) {
     payments = data.payments;
   } else if (!payments || payments.length < 71) {
@@ -3964,13 +4098,26 @@ async function syncToCloud() {
     payments
   };
 
+  // 1. Save to Firebase Firestore
+  if (window.firebaseSync && window.firebaseSync.db) {
+    const { db, doc, setDoc } = window.firebaseSync;
+    try {
+      const userDocId = sanitizeSyncKey(currentEmail || DEFAULT_USER_EMAIL);
+      const docRef = doc(db, 'mortgages', userDocId);
+      setDoc(docRef, payload, { merge: true }).then(() => {
+        updateSyncUI('● En Tiempo Real', '#10b981');
+      }).catch(() => {});
+    } catch(e) {}
+  }
+
+  // 2. Backup save to extendsclass
   try {
     fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(res => {
-      if (res.ok) updateSyncUI('En Tiempo Real', '#10b981');
+      if (res.ok) updateSyncUI('● En Tiempo Real', '#10b981');
     }).catch(() => {});
   } catch (err) {}
 }
