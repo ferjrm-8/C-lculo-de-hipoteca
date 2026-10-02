@@ -895,6 +895,28 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
+    .modal-tab-btn {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 8px;
+      background: transparent;
+      border: none;
+      color: #8ca48a;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .modal-tab-btn.active {
+      background: rgba(16, 185, 129, 0.22);
+      color: #10b981;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
     /* Toast Notification */
     #toast-banner {
       position: fixed;
@@ -1759,48 +1781,54 @@
 
   <!-- Modal Conexión, Seguridad & Cuenta Multidispositivo -->
   <div id="sync-modal" class="modal-backdrop">
-    <div class="modal-sheet" style="max-width: 460px; background: #121c13; border: 1px solid #233725; border-radius: 16px; padding: 22px;">
+    <div class="modal-sheet" style="max-width: 480px; background: #121c13; border: 1px solid #233725; border-radius: 16px; padding: 22px;">
       <!-- Modal Header -->
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center;">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><polyline points="13 14 17 18 21 14"/><line x1="17" y1="18" x2="17" y2="9"/></svg>
           </div>
           <div>
-            <h3 style="font-size: 17px; font-weight: 800; color: #f1f7ef; margin: 0;">Sincronización & Seguridad</h3>
-            <p style="font-size: 12px; color: #8ca48a; margin: 2px 0 0 0;">Acceso privado con contraseña y tiempo real</p>
+            <h3 style="font-size: 17px; font-weight: 800; color: #f1f7ef; margin: 0;">Sincronización & Usuarios</h3>
+            <p style="font-size: 12px; color: #8ca48a; margin: 2px 0 0 0;">Acceso multidispositivo en tiempo real con contraseña</p>
           </div>
         </div>
         <button onclick="closeSyncModal()" style="background: none; border: none; color: #8ca48a; cursor: pointer; font-size: 22px; padding: 4px; line-height: 1;">✕</button>
       </div>
 
-      <!-- Main Box Card -->
-      <div style="background: #162317; border: 1px solid #2d4430; border-radius: 12px; padding: 18px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-          <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: #f1f7ef;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#84cc16" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span>Credenciales de Acceso</span>
-          </div>
-          <span id="sync-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #10b981;">
-            En línea
-          </span>
-        </div>
+      <!-- Segmented Tab Navigation -->
+      <div style="display: flex; background: #0c140d; border: 1px solid #233725; border-radius: 10px; padding: 4px; margin-bottom: 16px; gap: 4px;">
+        <button id="sync-tab-btn-login" type="button" onclick="switchSyncTab('login')" class="modal-tab-btn active">
+          🔑 Iniciar Sesión
+        </button>
+        <button id="sync-tab-btn-register" type="button" onclick="switchSyncTab('register')" class="modal-tab-btn">
+          ✨ Crear Cuenta
+        </button>
+        <button id="sync-tab-btn-account" type="button" onclick="switchSyncTab('account')" class="modal-tab-btn">
+          ⚙️ Mi Cuenta
+        </button>
+      </div>
 
-        <form id="sync-auth-form" onsubmit="handleSyncLogin(event)">
+      <!-- Global Alert / Message box -->
+      <div id="sync-modal-msg" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 12px; margin-bottom: 14px; font-weight: 500;"></div>
+
+      <!-- TAB 1: INICIAR SESIÓN -->
+      <div id="sync-view-login">
+        <form id="sync-login-form" onsubmit="handleSyncLogin(event)">
           <div class="form-field" style="margin-bottom: 12px;">
-            <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Correo / Usuario:</label>
+            <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Correo Electrónico o Usuario:</label>
             <div style="position: relative;">
               <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               </span>
-              <input type="email" id="sync-input-email" required class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-family: monospace; font-size: 13px;" value="ferjrm@gmail.com" placeholder="tu@email.com">
+              <input type="text" id="sync-input-email" required class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-family: monospace; font-size: 13px;" value="ferjrm@gmail.com" placeholder="tu@email.com">
             </div>
           </div>
 
           <div class="form-field" style="margin-bottom: 16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Contraseña de Seguridad:</label>
-              <button type="button" onclick="togglePasswordVisibility()" style="background: none; border: none; color: #10b981; font-size: 11px; cursor: pointer; padding: 0;">Mostrar / Ocultar</button>
+              <button type="button" onclick="togglePasswordVisibility('sync-input-password')" style="background: none; border: none; color: #10b981; font-size: 11px; cursor: pointer; padding: 0;">Mostrar / Ocultar</button>
             </div>
             <div style="position: relative;">
               <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
@@ -1810,22 +1838,14 @@
             </div>
           </div>
 
-          <!-- Alert message box -->
-          <div id="sync-modal-msg" style="display: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 14px;"></div>
-
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="submit" class="btn btn-primary" style="flex: 1; background: #10b981; border: none; font-weight: 700; padding: 10px 16px; justify-content: center;">
-              Acceder y Sincronizar
-            </button>
-            <button type="button" onclick="promptChangePassword()" class="btn btn-secondary btn-sm" style="background: #0f1810; border-color: #2d4430; color: #8ca48a; font-size: 11px;">
-              Cambiar Clave
-            </button>
-          </div>
+          <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px;">
+            Entrar a mi Cuenta y Sincronizar
+          </button>
         </form>
 
-        <div style="border-top: 1px solid #233725; margin-top: 14px; padding-top: 12px; font-size: 12px; color: #8ca48a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+        <div style="background: #162317; border: 1px solid #2d4430; border-radius: 10px; padding: 12px; font-size: 12px; color: #8ca48a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
           <div>
-            Cuenta activa: <span id="sync-active-label" style="color: #84cc16; font-weight: 700;">ferjrm@gmail.com</span>
+            Cuenta activa: <strong id="sync-active-label" style="color: #84cc16;">ferjrm@gmail.com</strong>
           </div>
           <div style="font-size: 11px; color: #64748b;">
             Última sync: <span id="sync-modal-last-time" style="color: #cbd5e1;">--</span>
@@ -1833,16 +1853,130 @@
         </div>
       </div>
 
-      <div style="background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 10px 14px; font-size: 11px; color: #94a3b8; margin-bottom: 16px; line-height: 1.4;">
-        💡 <strong>Autoguardado en tiempo real</strong>: Cualquier modificación en pagos, cuotas, amortizaciones o revisiones se guarda inmediatamente en la nube y se propaga automáticamente a todos los dispositivos abiertos.
+      <!-- TAB 2: CREAR NUEVA CUENTA -->
+      <div id="sync-view-register" style="display: none;">
+        <form id="sync-register-form" onsubmit="handleCreateUser(event)">
+          <div class="form-field" style="margin-bottom: 12px;">
+            <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Nuevo Correo / Usuario:</label>
+            <div style="position: relative;">
+              <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+              </span>
+              <input type="text" id="sync-reg-email" required class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-family: monospace; font-size: 13px;" placeholder="nuevo_usuario@email.com">
+            </div>
+          </div>
+
+          <div class="form-field" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Contraseña (mínimo 4 caracteres):</label>
+              <button type="button" onclick="togglePasswordVisibility('sync-reg-password')" style="background: none; border: none; color: #10b981; font-size: 11px; cursor: pointer; padding: 0;">Mostrar / Ocultar</button>
+            </div>
+            <div style="position: relative;">
+              <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </span>
+              <input type="password" id="sync-reg-password" minlength="4" required class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-size: 13px;" placeholder="Crea una contraseña segura">
+            </div>
+          </div>
+
+          <div class="form-field" style="margin-bottom: 16px;">
+            <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Repetir Contraseña:</label>
+            <div style="position: relative;">
+              <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #5c7a5a;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </span>
+              <input type="password" id="sync-reg-confirm" minlength="4" required class="form-input" style="padding-left: 32px; background: #0c130d; border-color: #2d4430; color: #f1f7ef; font-size: 13px;" placeholder="Repite la contraseña exactamente">
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; background: #10b981; border: none; font-weight: 700; padding: 11px 16px; justify-content: center; font-size: 13px; margin-bottom: 12px;">
+            ✨ Crear Cuenta Privada y Conectar
+          </button>
+        </form>
+
+        <div style="background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 10px 12px; font-size: 11px; color: #94a3b8; line-height: 1.4;">
+          🛡️ Al crear un nuevo usuario se genera un almacén en la nube independiente, protegido con contraseña y disponible desde cualquier móvil o navegador.
+        </div>
       </div>
 
-      <!-- Close and Logout Buttons -->
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <button type="button" onclick="handleLogout()" class="btn btn-secondary btn-sm" style="color: var(--red); border-color: rgba(239, 68, 68, 0.3); font-size: 11px;">
-          Cerrar Sesión
-        </button>
-        <button onclick="closeSyncModal()" class="btn btn-secondary" style="background: #162317; border-color: #2d4430; color: #ecf5ea; padding: 8px 20px;">
+      <!-- TAB 3: GESTIONAR CUENTA, CAMBIO DE CLAVE Y ELIMINAR CUENTA -->
+      <div id="sync-view-account" style="display: none;">
+        <!-- Resumen de cuenta actual -->
+        <div style="background: #162317; border: 1px solid #2d4430; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; color: #8ca48a; text-transform: uppercase; font-weight: 700;">Sesión Activa</span>
+            <span id="sync-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #10b981;">
+              Conectado
+            </span>
+          </div>
+          <div id="sync-manage-current-email" style="font-size: 15px; font-weight: 800; color: #f1f7ef; font-family: monospace;">
+            ferjrm@gmail.com
+          </div>
+          <div style="font-size: 11px; color: #8ca48a; margin-top: 4px;">
+            Estado de clave: <span id="sync-manage-lock-status" style="color: #84cc16; font-weight: 700;">🔒 Protegida con Contraseña</span>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+            Última sync: <span id="sync-manage-last-time" style="color: #cbd5e1;">--</span>
+          </div>
+          <div style="margin-top: 10px; display: flex; gap: 8px;">
+            <button type="button" onclick="triggerManualSync()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; color: #10b981; border-color: rgba(16,185,129,0.3);">
+              ☁️ Sincronizar Ahora
+            </button>
+            <button type="button" onclick="handleLogout()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+
+        <!-- Formulario Cambiar Contraseña (Dentro del UI, sin prompts) -->
+        <div style="background: #162317; border: 1px solid #2d4430; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
+          <h4 style="font-size: 13px; font-weight: 700; color: #f1f7ef; margin: 0 0 10px 0; display: flex; align-items: center; gap: 6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Cambiar Contraseña de la Cuenta
+          </h4>
+          <form id="sync-change-pwd-form" onsubmit="handleChangePassword(event)">
+            <div class="form-field" style="margin-bottom: 8px;">
+              <label style="color: #cbd5e1; font-size: 11px;">Contraseña Actual (dejar en blanco si no tenías):</label>
+              <input type="password" id="pwd-old" class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d;" placeholder="Contraseña actual">
+            </div>
+            <div class="form-field" style="margin-bottom: 8px;">
+              <label style="color: #cbd5e1; font-size: 11px;">Nueva Contraseña (mínimo 4 caracteres):</label>
+              <input type="password" id="pwd-new" minlength="4" required class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d;" placeholder="Nueva contraseña">
+            </div>
+            <div class="form-field" style="margin-bottom: 10px;">
+              <label style="color: #cbd5e1; font-size: 11px;">Confirmar Nueva Contraseña:</label>
+              <input type="password" id="pwd-confirm" minlength="4" required class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d;" placeholder="Repite la nueva contraseña">
+            </div>
+            <button type="submit" id="btn-submit-change-pwd" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: #1b2e1d; color: #10b981; border-color: rgba(16,185,129,0.4); font-weight: 700; padding: 8px;">
+              🔐 Actualizar Contraseña en la Nube
+            </button>
+          </form>
+        </div>
+
+        <!-- Zona de Peligro: Eliminar Cuenta -->
+        <div style="background: rgba(239, 68, 68, 0.06); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 10px; padding: 14px;">
+          <h4 style="font-size: 13px; font-weight: 700; color: #ef4444; margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Zona de Peligro: Eliminar Cuenta
+          </h4>
+          <p style="font-size: 11px; color: #fca5a5; margin: 0 0 10px 0; line-height: 1.35;">
+            Esta acción borrará definitivamente tu usuario y tus registros sincronizados en la nube.
+          </p>
+          <form onsubmit="handleDeleteAccount(event)">
+            <div class="form-field" style="margin-bottom: 8px;">
+              <label style="color: #cbd5e1; font-size: 11px;">Introduce tu contraseña para confirmar:</label>
+              <input type="password" id="delete-confirm-pwd" required class="form-input" style="padding: 7px 10px; font-size: 12px; background: #0c130d; border-color: rgba(239, 68, 68, 0.4);" placeholder="Tu contraseña">
+            </div>
+            <button type="submit" id="btn-submit-delete-account" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.5); font-weight: 700; padding: 8px;">
+              🗑️ Eliminar Definitivamente mi Cuenta
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Footer Close Button -->
+      <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
+        <button onclick="closeSyncModal()" class="btn btn-secondary" style="background: #162317; border-color: #2d4430; color: #ecf5ea; padding: 7px 18px; font-size: 12px;">
           Cerrar
         </button>
       </div>

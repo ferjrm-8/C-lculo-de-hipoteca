@@ -198,11 +198,88 @@ let localLastSyncTime = 0;
 let realtimePollInterval = null;
 let isSyncingIncoming = false;
 
-async function hashPassword(pwd) {
+function hashPassword(pwd) {
   if (!pwd) return '';
-  const enc = new TextEncoder().encode(pwd.trim());
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const ascii = String(pwd).trim();
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const words = [];
+  const utf8 = unescape(encodeURIComponent(ascii));
+  const asciiBitLength = utf8.length * 8;
+
+  const hash = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+  ];
+
+  const k = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+
+  let i, j;
+  for (i = 0; i < utf8.length; i++) {
+    words[i >> 2] |= (utf8.charCodeAt(i) & 0xff) << ((3 - i % 4) * 8);
+  }
+  words[i >> 2] |= 0x80 << ((3 - i % 4) * 8);
+  words[(((utf8.length + 8) >> 6) + 1) * 16 - 1] = asciiBitLength;
+
+  const w = new Array(64);
+  for (i = 0; i < words.length; i += 16) {
+    let a = hash[0], b = hash[1], c = hash[2], d = hash[3],
+        e = hash[4], f = hash[5], g = hash[6], h = hash[7];
+
+    for (j = 0; j < 64; j++) {
+      if (j < 16) {
+        w[j] = words[i + j] | 0;
+      } else {
+        const gamma0 = rightRotate(w[j - 15], 7) ^ rightRotate(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+        const gamma1 = rightRotate(w[j - 2], 17) ^ rightRotate(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+        w[j] = (w[j - 16] + gamma0 + w[j - 7] + gamma1) | 0;
+      }
+
+      const s1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);
+      const ch = (e & f) ^ ((~e) & g);
+      const temp1 = (h + s1 + ch + k[j] + w[j]) | 0;
+      const s0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (s0 + maj) | 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) | 0;
+    }
+
+    hash[0] = (hash[0] + a) | 0;
+    hash[1] = (hash[1] + b) | 0;
+    hash[2] = (hash[2] + c) | 0;
+    hash[3] = (hash[3] + d) | 0;
+    hash[4] = (hash[4] + e) | 0;
+    hash[5] = (hash[5] + f) | 0;
+    hash[6] = (hash[6] + g) | 0;
+    hash[7] = (hash[7] + h) | 0;
+  }
+
+  let result = '';
+  for (i = 0; i < 8; i++) {
+    for (j = 3; j >= 0; j--) {
+      const byte = (hash[i] >>> (j * 8)) & 0xff;
+      result += (byte < 16 ? '0' : '') + byte.toString(16);
+    }
+  }
+  return result;
 }
 
 function getStoredAuth() {
@@ -1721,6 +1798,62 @@ function scheduleCloudSync(delayMs = 250) {
   }, delayMs);
 }
 
+function switchSyncTab(tab) {
+  const tabs = ['login', 'register', 'account'];
+  tabs.forEach(t => {
+    const btn = document.getElementById(`sync-tab-btn-${t}`);
+    const view = document.getElementById(`sync-view-${t}`);
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (view) view.style.display = (t === tab) ? 'block' : 'none';
+  });
+
+  const msgEl = document.getElementById('sync-modal-msg');
+  if (msgEl) msgEl.style.display = 'none';
+
+  if (tab === 'account') {
+    const emailEl = document.getElementById('sync-manage-current-email');
+    if (emailEl) emailEl.textContent = currentEmail;
+    const lockEl = document.getElementById('sync-manage-lock-status');
+    if (lockEl) {
+      lockEl.textContent = currentPasswordHash ? '🔒 Protegida con Contraseña' : '🔓 Sin Contraseña';
+      lockEl.style.color = currentPasswordHash ? '#84cc16' : '#f59e0b';
+    }
+    const timeEl = document.getElementById('sync-manage-last-time');
+    if (timeEl) timeEl.textContent = lastCloudTimestampText || '--';
+  }
+}
+
+function togglePasswordVisibility(inputId) {
+  const input = document.getElementById(inputId);
+  if (input) {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+}
+
+function showSyncModalMsg(text, type = 'info') {
+  const msgEl = document.getElementById('sync-modal-msg');
+  if (!msgEl) return;
+  msgEl.style.display = 'block';
+  msgEl.textContent = text;
+  if (type === 'error') {
+    msgEl.style.background = 'rgba(239, 68, 68, 0.18)';
+    msgEl.style.color = '#fca5a5';
+    msgEl.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+  } else if (type === 'warning') {
+    msgEl.style.background = 'rgba(245, 158, 11, 0.18)';
+    msgEl.style.color = '#fcd34d';
+    msgEl.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+  } else if (type === 'success') {
+    msgEl.style.background = 'rgba(16, 185, 129, 0.18)';
+    msgEl.style.color = '#86efac';
+    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+  } else {
+    msgEl.style.background = 'rgba(59, 130, 246, 0.18)';
+    msgEl.style.color = '#93c5fd';
+    msgEl.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+  }
+}
+
 function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
   const userEl = document.getElementById('banner-sync-user');
   if (userEl) userEl.textContent = currentEmail;
@@ -1728,8 +1861,20 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
   const activeLabel = document.getElementById('sync-active-label');
   if (activeLabel) activeLabel.textContent = currentEmail;
 
+  const manageEmail = document.getElementById('sync-manage-current-email');
+  if (manageEmail) manageEmail.textContent = currentEmail;
+
   const inputEmail = document.getElementById('sync-input-email');
   if (inputEmail && !inputEmail.value) inputEmail.value = currentEmail;
+
+  const pillLabel = document.getElementById('sync-pill-label');
+  if (pillLabel) {
+    pillLabel.textContent = currentEmail.split('@')[0];
+  }
+  const pillDot = document.getElementById('sync-pill-dot');
+  if (pillDot) {
+    pillDot.style.background = dotColor;
+  }
 
   const statusEl = document.getElementById('banner-sync-status');
   if (statusEl) {
@@ -1744,9 +1889,11 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
 
   const timeEl = document.getElementById('banner-sync-time');
   const modalTimeEl = document.getElementById('sync-modal-last-time');
+  const manageTimeEl = document.getElementById('sync-manage-last-time');
   const timeToShow = lastCloudTimestampText || new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
   if (timeEl) timeEl.textContent = timeToShow;
   if (modalTimeEl) modalTimeEl.textContent = timeToShow;
+  if (manageTimeEl) manageTimeEl.textContent = timeToShow;
 
   const badge = document.getElementById('sync-status-badge');
   if (badge) {
@@ -1760,6 +1907,11 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
     lockBadge.textContent = currentPasswordHash ? '🔒 Protegida' : '🔓 Sin clave';
     lockBadge.style.color = currentPasswordHash ? '#84cc16' : '#f59e0b';
   }
+
+  const settingsSyncAcc = document.getElementById('settings-sync-account-label');
+  if (settingsSyncAcc) {
+    settingsSyncAcc.textContent = currentEmail;
+  }
 }
 
 async function initCloudSync() {
@@ -1770,12 +1922,12 @@ async function initCloudSync() {
       const data = await res.json();
       if (data && data.updatedAt) {
         lastCloudTimestampText = data.lastUpdatedText || new Date(data.updatedAt).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
-        
+
         // If account has password set, verify credentials
         if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
           updateSyncUI('Requiere Clave', '#f59e0b');
-          openSyncModal();
-          showSyncModalMsg('Introduce tu contraseña para acceder y sincronizar los datos de tu cuenta.', 'warning');
+          openSyncModal('login');
+          showSyncModalMsg('🔐 Tu cuenta está protegida con contraseña. Introduce tu contraseña para sincronizar.', 'warning');
           return;
         }
 
@@ -1827,9 +1979,16 @@ async function syncToCloud() {
   localLastSyncTime = now;
   lastCloudTimestampText = new Date(now).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
+  // Safety: Preserve password hash if account already has one in registry or storage
+  let effectiveHash = currentPasswordHash || '';
+  if (!effectiveHash) {
+    const stored = getStoredAuth();
+    if (stored && stored.hash) effectiveHash = stored.hash;
+  }
+
   const payload = {
     account: currentEmail,
-    passwordHash: currentPasswordHash || '',
+    passwordHash: effectiveHash,
     updatedAt: now,
     lastUpdatedText: lastCloudTimestampText,
     settings,
@@ -1876,7 +2035,7 @@ function startRealtimePoller() {
     } catch (err) {
       // Background poll network glitch, non-fatal
     }
-  }, 3500);
+  }, 3000);
 }
 
 async function triggerManualSync() {
@@ -1891,7 +2050,7 @@ async function triggerManualSync() {
       if (data && data.updatedAt) {
         if (data.passwordHash && data.passwordHash !== currentPasswordHash) {
           updateSyncUI('Requiere Clave', '#f59e0b');
-          openSyncModal();
+          openSyncModal('login');
           showSyncModalMsg('Introduce tu contraseña para sincronizar esta cuenta.', 'warning');
           return;
         }
@@ -1908,7 +2067,10 @@ async function triggerManualSync() {
   }
 }
 
-function openSyncModal() {
+function openSyncModal(defaultTab) {
+  const chosenTab = defaultTab || (currentPasswordHash ? 'account' : 'login');
+  switchSyncTab(chosenTab);
+
   const emailInput = document.getElementById('sync-input-email');
   if (emailInput) emailInput.value = currentEmail;
 
@@ -1930,43 +2092,19 @@ function closeSyncModal() {
   if (modal) modal.classList.remove('active');
 }
 
-function togglePasswordVisibility() {
-  const input = document.getElementById('sync-input-password');
-  if (input) {
-    input.type = input.type === 'password' ? 'text' : 'password';
-  }
-}
-
-function showSyncModalMsg(text, type = 'info') {
-  const msgEl = document.getElementById('sync-modal-msg');
-  if (!msgEl) return;
-  msgEl.style.display = 'block';
-  msgEl.textContent = text;
-  if (type === 'error') {
-    msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
-    msgEl.style.color = '#fca5a5';
-    msgEl.style.border = '1px solid rgba(239, 68, 68, 0.4)';
-  } else if (type === 'warning') {
-    msgEl.style.background = 'rgba(245, 158, 11, 0.15)';
-    msgEl.style.color = '#fcd34d';
-    msgEl.style.border = '1px solid rgba(245, 158, 11, 0.4)';
-  } else {
-    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
-    msgEl.style.color = '#86efac';
-    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.4)';
-  }
-}
-
+/* ==========================================================
+   AUTHENTICATION: LOGIN
+   ========================================================== */
 async function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
   const emailInput = document.getElementById('sync-input-email');
   const pwdInput = document.getElementById('sync-input-password');
 
-  const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
   const pwd = pwdInput ? pwdInput.value.trim() : '';
 
-  if (!email) {
-    showSyncModalMsg('Introduce un correo electrónico válido.', 'error');
+  if (!rawEmail) {
+    showSyncModalMsg('Introduce un correo electrónico o usuario válido.', 'error');
     return;
   }
   if (!pwd) {
@@ -1977,47 +2115,32 @@ async function handleSyncLogin(e) {
   showSyncModalMsg('Verificando credenciales en la nube...', 'info');
 
   try {
-    const pwdHash = await hashPassword(pwd);
+    const pwdHash = hashPassword(pwd);
 
-    // 1. Resolve bin for email from registry
+    // 1. Fetch Master Registry to resolve bin and account security
     let binId = currentBinId;
-    if (email === DEFAULT_USER_EMAIL || email === 'ferjrm') {
-      binId = DEFAULT_USER_BIN;
-    } else {
-      const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
-      if (regRes.ok) {
-        const reg = await regRes.json();
-        if (reg.users && reg.users[email]) {
-          binId = reg.users[email];
-        } else {
-          // Create new user bin
-          const newBinRes = await fetch('https://extendsclass.com/api/json-storage/bin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              account: email,
-              passwordHash: pwdHash,
-              updatedAt: Date.now(),
-              lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
-              settings,
-              revisions,
-              payments
-            })
-          });
-          const newBin = await newBinRes.json();
-          binId = newBin.id;
-          reg.users = reg.users || {};
-          reg.users[email] = binId;
-          await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(reg)
-          });
-        }
-      }
+    let expectedPasswordHash = '';
+
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    let reg = {};
+    if (regRes.ok) {
+      reg = await regRes.json();
     }
 
-    // 2. Fetch cloud data for bin
+    if (rawEmail === DEFAULT_USER_EMAIL || rawEmail === 'ferjrm' || rawEmail === 'mi_sistema_hipoteca') {
+      binId = DEFAULT_USER_BIN;
+    } else if (reg.users && reg.users[rawEmail]) {
+      binId = reg.users[rawEmail];
+    } else {
+      showSyncModalMsg('Esta cuenta no existe en la nube. Puedes crearla en la pestaña "Crear Cuenta".', 'warning');
+      return;
+    }
+
+    if (reg.accounts && reg.accounts[rawEmail] && reg.accounts[rawEmail].passwordHash) {
+      expectedPasswordHash = reg.accounts[rawEmail].passwordHash;
+    }
+
+    // 2. Fetch cloud bin data
     const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`);
     if (!binRes.ok) {
       showSyncModalMsg('Error al conectar con la cuenta en la nube.', 'error');
@@ -2025,11 +2148,14 @@ async function handleSyncLogin(e) {
     }
 
     const cloudData = await binRes.json();
+    if (cloudData.passwordHash) {
+      expectedPasswordHash = cloudData.passwordHash;
+    }
 
     // 3. Password Verification
-    if (cloudData.passwordHash) {
-      if (cloudData.passwordHash !== pwdHash) {
-        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta. Acceso denegado.', 'error');
+    if (expectedPasswordHash) {
+      if (expectedPasswordHash !== pwdHash) {
+        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta. Comprueba mayúsculas o caracteres.', 'error');
         return;
       }
     } else {
@@ -2040,63 +2166,272 @@ async function handleSyncLogin(e) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cloudData)
       });
-      showToast('🔒 Contraseña configurada con éxito. Tu cuenta ahora está protegida.');
+
+      // Update registry account
+      reg.accounts = reg.accounts || {};
+      reg.accounts[rawEmail] = reg.accounts[rawEmail] || { email: rawEmail, binId };
+      reg.accounts[rawEmail].passwordHash = pwdHash;
+      reg.accounts[rawEmail].updatedAt = Date.now();
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reg)
+      });
+      showToast('🔒 Contraseña guardada con éxito. Tu cuenta ahora está protegida.');
     }
 
     // Authentication successful
-    currentEmail = email;
+    currentEmail = rawEmail;
     currentPasswordHash = pwdHash;
     currentBinId = binId;
-    saveStoredAuth(email, pwdHash, binId);
+    saveStoredAuth(rawEmail, pwdHash, binId);
 
     applyCloudData(cloudData);
     closeSyncModal();
-    showToast(`✅ Sesión iniciada como ${email} (Sincronizado)`);
+    showToast(`✅ Sesión iniciada como ${rawEmail} (Sincronizado)`);
   } catch (err) {
     console.error("Login notice:", err);
-    showSyncModalMsg('Error de conexión al verificar contraseña.', 'error');
+    showSyncModalMsg('Error de conexión al verificar contraseña: ' + (err.message || err), 'error');
   }
 }
 
-async function promptChangePassword() {
-  const oldPwd = prompt("Introduce tu contraseña actual:");
-  if (oldPwd === null) return;
-  const oldHash = await hashPassword(oldPwd);
+/* ==========================================================
+   AUTHENTICATION: CREATE NEW USER
+   ========================================================== */
+async function handleCreateUser(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const emailInput = document.getElementById('sync-reg-email');
+  const pwdInput = document.getElementById('sync-reg-password');
+  const confirmInput = document.getElementById('sync-reg-confirm');
 
-  if (currentPasswordHash && oldHash !== currentPasswordHash) {
-    alert("❌ La contraseña actual no coincide.");
+  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  const pwd = pwdInput ? pwdInput.value.trim() : '';
+  const confirmPwd = confirmInput ? confirmInput.value.trim() : '';
+
+  if (!rawEmail || !rawEmail.includes('@')) {
+    showSyncModalMsg('Introduce un correo electrónico válido para registrar la cuenta.', 'error');
+    return;
+  }
+  if (!pwd || pwd.length < 4) {
+    showSyncModalMsg('La contraseña debe tener al menos 4 caracteres.', 'error');
+    return;
+  }
+  if (pwd !== confirmPwd) {
+    showSyncModalMsg('❌ Las contraseñas no coinciden.', 'error');
     return;
   }
 
-  const newPwd = prompt("Introduce tu NUEVA contraseña:");
-  if (!newPwd || newPwd.trim().length < 4) {
-    alert("La nueva contraseña debe tener al menos 4 caracteres.");
-    return;
-  }
+  showSyncModalMsg('Creando cuenta en la nube...', 'info');
 
-  const confirmPwd = prompt("Confirma tu NUEVA contraseña:");
-  if (newPwd !== confirmPwd) {
-    alert("❌ Las contraseñas no coinciden.");
-    return;
-  }
+  try {
+    const pwdHash = hashPassword(pwd);
 
-  const newHash = await hashPassword(newPwd);
-  currentPasswordHash = newHash;
-  saveStoredAuth(currentEmail, newHash, currentBinId);
-  await syncToCloud();
-  updateSyncUI();
-  showToast("🔐 Contraseña actualizada con éxito en la nube");
-  closeSyncModal();
-}
+    // 1. Fetch registry and verify not already registered
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    let reg = {};
+    if (regRes.ok) {
+      reg = await regRes.json();
+    }
+    reg.users = reg.users || {};
+    reg.accounts = reg.accounts || {};
 
-function handleLogout() {
-  if (confirm("¿Deseas cerrar sesión en este dispositivo?")) {
-    currentPasswordHash = '';
-    saveStoredAuth(currentEmail, '', currentBinId);
-    updateSyncUI('Requiere Clave', '#f59e0b');
+    if (reg.users[rawEmail] || reg.accounts[rawEmail]) {
+      showSyncModalMsg('⚠️ Este correo ya está registrado. Usa la pestaña "Iniciar Sesión" para acceder.', 'warning');
+      return;
+    }
+
+    // 2. Create independent cloud bin for user
+    const now = Date.now();
+    const newBinPayload = {
+      account: rawEmail,
+      passwordHash: pwdHash,
+      createdAt: now,
+      updatedAt: now,
+      lastUpdatedText: new Date(now).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+      settings,
+      revisions,
+      payments
+    };
+
+    const createRes = await fetch('https://extendsclass.com/api/json-storage/bin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newBinPayload)
+    });
+
+    if (!createRes.ok) {
+      showSyncModalMsg('No se pudo crear el almacén de datos en la nube.', 'error');
+      return;
+    }
+
+    const createdData = await createRes.json();
+    const newBinId = createdData.id;
+
+    // 3. Register user in Master Registry
+    reg.users[rawEmail] = newBinId;
+    reg.accounts[rawEmail] = {
+      email: rawEmail,
+      binId: newBinId,
+      passwordHash: pwdHash,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reg)
+    });
+
+    // 4. Activate session
+    currentEmail = rawEmail;
+    currentPasswordHash = pwdHash;
+    currentBinId = newBinId;
+    saveStoredAuth(rawEmail, pwdHash, newBinId);
+
+    updateSyncUI();
     closeSyncModal();
-    showToast("Sesión cerrada. Introduce tu contraseña para volver a sincronizar.");
+    showToast(`🎉 ¡Cuenta creada con éxito! Conectado como ${rawEmail}`);
+  } catch (err) {
+    console.error("Create user error:", err);
+    showSyncModalMsg('Error al crear cuenta: ' + (err.message || err), 'error');
   }
+}
+
+/* ==========================================================
+   AUTHENTICATION: CHANGE PASSWORD
+   ========================================================== */
+async function handleChangePassword(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const oldPwdInput = document.getElementById('pwd-old');
+  const newPwdInput = document.getElementById('pwd-new');
+  const confirmPwdInput = document.getElementById('pwd-confirm');
+
+  const oldPwd = oldPwdInput ? oldPwdInput.value.trim() : '';
+  const newPwd = newPwdInput ? newPwdInput.value.trim() : '';
+  const confirmPwd = confirmPwdInput ? confirmPwdInput.value.trim() : '';
+
+  if (currentPasswordHash && (!oldPwd || hashPassword(oldPwd) !== currentPasswordHash)) {
+    showSyncModalMsg('❌ La contraseña actual introducida no es correcta.', 'error');
+    return;
+  }
+  if (!newPwd || newPwd.length < 4) {
+    showSyncModalMsg('La nueva contraseña debe tener al menos 4 caracteres.', 'error');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    showSyncModalMsg('❌ Las contraseñas nuevas no coinciden.', 'error');
+    return;
+  }
+
+  showSyncModalMsg('Actualizando contraseña en la nube...', 'info');
+
+  try {
+    const newHash = hashPassword(newPwd);
+
+    // 1. Update bin
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    if (binRes.ok) {
+      const data = await binRes.json();
+      data.passwordHash = newHash;
+      data.updatedAt = Date.now();
+      data.lastUpdatedText = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    }
+
+    // 2. Update registry
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    if (regRes.ok) {
+      const reg = await regRes.json();
+      reg.accounts = reg.accounts || {};
+      reg.accounts[currentEmail] = reg.accounts[currentEmail] || { email: currentEmail, binId: currentBinId };
+      reg.accounts[currentEmail].passwordHash = newHash;
+      reg.accounts[currentEmail].updatedAt = Date.now();
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reg)
+      });
+    }
+
+    currentPasswordHash = newHash;
+    saveStoredAuth(currentEmail, newHash, currentBinId);
+
+    if (oldPwdInput) oldPwdInput.value = '';
+    if (newPwdInput) newPwdInput.value = '';
+    if (confirmPwdInput) confirmPwdInput.value = '';
+
+    updateSyncUI();
+    showSyncModalMsg('✅ Contraseña actualizada con éxito en la nube.', 'success');
+    showToast('🔐 Contraseña actualizada con éxito en la nube');
+  } catch (err) {
+    console.error("Change password error:", err);
+    showSyncModalMsg('Error al actualizar contraseña: ' + (err.message || err), 'error');
+  }
+}
+
+/* ==========================================================
+   AUTHENTICATION: DELETE ACCOUNT
+   ========================================================== */
+async function handleDeleteAccount(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const confirmPwdInput = document.getElementById('delete-confirm-pwd');
+  const pwd = confirmPwdInput ? confirmPwdInput.value.trim() : '';
+
+  if (currentPasswordHash && hashPassword(pwd) !== currentPasswordHash) {
+    showSyncModalMsg('❌ Contraseña incorrecta. No se puede eliminar la cuenta.', 'error');
+    return;
+  }
+
+  showSyncModalMsg('Eliminando tu cuenta y datos en la nube...', 'info');
+
+  try {
+    // 1. Remove from registry
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    if (regRes.ok) {
+      const reg = await regRes.json();
+      if (reg.users) delete reg.users[currentEmail];
+      if (reg.accounts) delete reg.accounts[currentEmail];
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reg)
+      });
+    }
+
+    // 2. Clear credentials
+    localStorage.removeItem('mortgage_auth_email');
+    localStorage.removeItem('mortgage_auth_hash');
+    localStorage.removeItem('mortgage_auth_bin');
+
+    currentEmail = DEFAULT_USER_EMAIL;
+    currentPasswordHash = '';
+    currentBinId = DEFAULT_USER_BIN;
+
+    updateSyncUI('Cuenta Eliminada', '#ef4444');
+    if (confirmPwdInput) confirmPwdInput.value = '';
+
+    showToast('🗑️ Tu cuenta ha sido eliminada de la nube.');
+    closeSyncModal();
+  } catch (err) {
+    console.error("Delete account error:", err);
+    showSyncModalMsg('Error al eliminar cuenta: ' + (err.message || err), 'error');
+  }
+}
+
+/* ==========================================================
+   AUTHENTICATION: LOGOUT
+   ========================================================== */
+function handleLogout() {
+  currentPasswordHash = '';
+  saveStoredAuth(currentEmail, '', currentBinId);
+  updateSyncUI('Requiere Clave', '#f59e0b');
+  closeSyncModal();
+  showToast("Sesión cerrada. Introduce tu contraseña para volver a sincronizar.");
 }
 
 function showToast(msg) {
