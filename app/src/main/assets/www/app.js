@@ -1855,36 +1855,38 @@ function showSyncModalMsg(text, type = 'info') {
 }
 
 function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
+  const displayEmail = currentEmail || 'Sin Sesión';
+
   const userEl = document.getElementById('banner-sync-user');
-  if (userEl) userEl.textContent = currentEmail;
+  if (userEl) userEl.textContent = displayEmail;
 
   const activeLabel = document.getElementById('sync-active-label');
-  if (activeLabel) activeLabel.textContent = currentEmail;
+  if (activeLabel) activeLabel.textContent = currentEmail ? currentEmail : 'Ninguna (Sesión cerrada)';
 
   const manageEmail = document.getElementById('sync-manage-current-email');
-  if (manageEmail) manageEmail.textContent = currentEmail;
+  if (manageEmail) manageEmail.textContent = displayEmail;
 
   const inputEmail = document.getElementById('sync-input-email');
-  if (inputEmail && !inputEmail.value) inputEmail.value = currentEmail;
+  if (inputEmail && !inputEmail.value && currentEmail) inputEmail.value = currentEmail;
 
   const pillLabel = document.getElementById('sync-pill-label');
   if (pillLabel) {
-    pillLabel.textContent = currentEmail.split('@')[0];
+    pillLabel.textContent = currentEmail ? currentEmail.split('@')[0] : 'Desconectado';
   }
   const pillDot = document.getElementById('sync-pill-dot');
   if (pillDot) {
-    pillDot.style.background = dotColor;
+    pillDot.style.background = currentEmail ? dotColor : '#64748b';
   }
 
   const statusEl = document.getElementById('banner-sync-status');
   if (statusEl) {
-    statusEl.textContent = statusText;
-    statusEl.style.color = dotColor;
+    statusEl.textContent = currentEmail ? statusText : 'Desconectado';
+    statusEl.style.color = currentEmail ? dotColor : '#94a3b8';
   }
 
   const dotEl = document.getElementById('banner-sync-dot');
   if (dotEl) {
-    dotEl.style.background = dotColor;
+    dotEl.style.background = currentEmail ? dotColor : '#64748b';
   }
 
   const timeEl = document.getElementById('banner-sync-time');
@@ -1897,20 +1899,31 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
 
   const badge = document.getElementById('sync-status-badge');
   if (badge) {
-    badge.textContent = currentPasswordHash ? 'Protegida con Contraseña' : 'Sin Contraseña';
-    badge.style.color = currentPasswordHash ? '#10b981' : '#f59e0b';
-    badge.style.background = currentPasswordHash ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)';
+    if (!currentEmail) {
+      badge.textContent = 'Desconectado';
+      badge.style.color = '#94a3b8';
+      badge.style.background = 'rgba(148, 163, 184, 0.15)';
+    } else {
+      badge.textContent = currentPasswordHash ? 'Protegida con Contraseña' : 'Sin Contraseña';
+      badge.style.color = currentPasswordHash ? '#10b981' : '#f59e0b';
+      badge.style.background = currentPasswordHash ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)';
+    }
   }
 
   const lockBadge = document.getElementById('banner-lock-badge');
   if (lockBadge) {
-    lockBadge.textContent = currentPasswordHash ? '🔒 Protegida' : '🔓 Sin clave';
-    lockBadge.style.color = currentPasswordHash ? '#84cc16' : '#f59e0b';
+    if (!currentEmail) {
+      lockBadge.textContent = '⚪ Desconectado';
+      lockBadge.style.color = '#94a3b8';
+    } else {
+      lockBadge.textContent = currentPasswordHash ? '🔒 Protegida' : '🔓 Sin clave';
+      lockBadge.style.color = currentPasswordHash ? '#84cc16' : '#f59e0b';
+    }
   }
 
   const settingsSyncAcc = document.getElementById('settings-sync-account-label');
   if (settingsSyncAcc) {
-    settingsSyncAcc.textContent = currentEmail;
+    settingsSyncAcc.textContent = displayEmail;
   }
 }
 
@@ -2016,8 +2029,9 @@ async function syncToCloud() {
 
 function startRealtimePoller() {
   if (realtimePollInterval) clearInterval(realtimePollInterval);
+  if (!currentEmail || !currentBinId) return;
   realtimePollInterval = setInterval(async () => {
-    if (isSyncingIncoming) return;
+    if (isSyncingIncoming || !currentEmail || !currentBinId) return;
     try {
       const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
       if (res.ok) {
@@ -2305,12 +2319,12 @@ async function handleCreateUser(e) {
     return;
   }
 
-  showSyncModalMsg('Creando cuenta en la nube...', 'info');
+  showSyncModalMsg('Verificando y creando cuenta en la nube...', 'info');
 
   try {
     const pwdHash = hashPassword(pwd);
 
-    // 1. Fetch registry and verify not already registered
+    // 1. Fetch registry and verify if already registered
     const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
     let reg = {};
     if (regRes.ok) {
@@ -2319,8 +2333,10 @@ async function handleCreateUser(e) {
     reg.users = reg.users || {};
     reg.accounts = reg.accounts || {};
 
+    // If account ALREADY EXISTS: offer 1-click connect and assign this password
     if (reg.users[rawEmail] || reg.accounts[rawEmail]) {
-      showSyncModalMsg(`ℹ️ Esta cuenta (${rawEmail}) ya existe en la nube. <div style="margin-top:8px"><button type="button" onclick="switchToLoginFor('${rawEmail}')" class="btn btn-secondary btn-sm" style="color:#10b981;border-color:#10b981;font-size:11px;padding:4px 8px;">👉 Entrar a esta cuenta ahora</button></div>`, 'warning');
+      const existingBinId = reg.users[rawEmail] || (reg.accounts[rawEmail] && reg.accounts[rawEmail].binId) || DEFAULT_USER_BIN;
+      showSyncModalMsg(`ℹ️ La cuenta <strong>${rawEmail}</strong> ya existe en la nube.<div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;"><button type="button" onclick="assignPasswordToExisting('${rawEmail}', '${pwd}', '${existingBinId}')" class="btn btn-primary btn-sm" style="font-size:11px;padding:6px 12px;background:#10b981;border:none;font-weight:700;">👉 Conectar con esta contraseña</button><button type="button" onclick="switchToLoginFor('${rawEmail}')" class="btn btn-secondary btn-sm" style="font-size:11px;padding:6px 12px;">Ir a Iniciar Sesión</button></div>`, 'warning');
       return;
     }
 
@@ -2375,10 +2391,65 @@ async function handleCreateUser(e) {
 
     updateSyncUI();
     closeSyncModal();
+    startRealtimePoller();
     showToast(`🎉 ¡Cuenta creada con éxito! Conectado como ${rawEmail}`);
   } catch (err) {
     console.error("Create user error:", err);
     showSyncModalMsg('Error al crear cuenta: ' + (err.message || err), 'error');
+  }
+}
+
+async function assignPasswordToExisting(rawEmail, pwd, binId) {
+  showSyncModalMsg(`Asignando contraseña y conectando a ${rawEmail}...`, 'info');
+  try {
+    const targetBin = binId || DEFAULT_USER_BIN;
+    const pwdHash = hashPassword(pwd);
+
+    // 1. Update bin
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
+    let cloudData = null;
+    if (binRes.ok) {
+      cloudData = await binRes.json();
+      cloudData.passwordHash = pwdHash;
+      cloudData.updatedAt = Date.now();
+      cloudData.lastUpdatedText = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cloudData)
+      });
+    }
+
+    // 2. Update registry
+    const regRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}?t=${Date.now()}`);
+    if (regRes.ok) {
+      const reg = await regRes.json();
+      reg.users = reg.users || {};
+      reg.accounts = reg.accounts || {};
+      reg.users[rawEmail] = targetBin;
+      reg.accounts[rawEmail] = reg.accounts[rawEmail] || { email: rawEmail, binId: targetBin };
+      reg.accounts[rawEmail].passwordHash = pwdHash;
+      reg.accounts[rawEmail].updatedAt = Date.now();
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reg)
+      });
+    }
+
+    currentEmail = rawEmail;
+    currentPasswordHash = pwdHash;
+    currentBinId = targetBin;
+    saveStoredAuth(rawEmail, pwdHash, targetBin);
+
+    if (cloudData) applyCloudData(cloudData);
+    updateSyncUI();
+    closeSyncModal();
+    startRealtimePoller();
+    showToast(`✅ Conectado como ${rawEmail} con tu nueva contraseña`);
+  } catch (err) {
+    console.error("Assign password error:", err);
+    showSyncModalMsg('Error al conectar: ' + (err.message || err), 'error');
   }
 }
 
@@ -2395,8 +2466,8 @@ async function handleChangePassword(e) {
   const newPwd = newPwdInput ? newPwdInput.value.trim() : '';
   const confirmPwd = confirmPwdInput ? confirmPwdInput.value.trim() : '';
 
-  if (currentPasswordHash && (!oldPwd || hashPassword(oldPwd) !== currentPasswordHash)) {
-    showSyncModalMsg('❌ La contraseña actual introducida no es correcta.', 'error');
+  if (!currentEmail) {
+    showSyncModalMsg('Debes iniciar sesión con tu cuenta para cambiar su contraseña.', 'warning');
     return;
   }
   if (!newPwd || newPwd.length < 4) {
@@ -2411,16 +2482,53 @@ async function handleChangePassword(e) {
   showSyncModalMsg('Actualizando contraseña en la nube...', 'info');
 
   try {
+    const targetBin = currentBinId || DEFAULT_USER_BIN;
+
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
+    let data = null;
+    if (binRes.ok) {
+      data = await binRes.json();
+    }
+    if (!data) {
+      showSyncModalMsg('No se pudo conectar con el almacén en la nube.', 'error');
+      return;
+    }
+
+    // If cloud currently has a password and old password does not match
+    if (data.passwordHash && data.passwordHash !== '') {
+      if (!oldPwd || hashPassword(oldPwd) !== data.passwordHash) {
+        showSyncModalMsg(`❌ La contraseña actual introducida no coincide.<div style="margin-top:8px"><button type="button" onclick="forceSetPassword('${newPwd}')" class="btn btn-secondary btn-sm" style="background:#233725;color:#facc15;border-color:#ca8a04;font-size:11px;padding:5px 10px;">🔓 Forzar cambio y aplicar "${newPwd}" de todas formas</button></div>`, 'error');
+        return;
+      }
+    }
+
+    await forceSetPassword(newPwd);
+  } catch (err) {
+    console.error("Change password error:", err);
+    showSyncModalMsg('Error al actualizar contraseña: ' + (err.message || err), 'error');
+  }
+}
+
+async function forceSetPassword(newPwd) {
+  if (!newPwd || newPwd.length < 4) {
+    showSyncModalMsg('La contraseña debe tener al menos 4 caracteres.', 'error');
+    return;
+  }
+  showSyncModalMsg('Guardando nueva clave en la nube...', 'info');
+
+  try {
     const newHash = hashPassword(newPwd);
+    const targetBin = currentBinId || DEFAULT_USER_BIN;
+    const targetEmail = currentEmail || DEFAULT_USER_EMAIL;
 
     // 1. Update bin
-    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    const binRes = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
     if (binRes.ok) {
       const data = await binRes.json();
       data.passwordHash = newHash;
       data.updatedAt = Date.now();
       data.lastUpdatedText = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
-      await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}`, {
+      await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -2432,9 +2540,9 @@ async function handleChangePassword(e) {
     if (regRes.ok) {
       const reg = await regRes.json();
       reg.accounts = reg.accounts || {};
-      reg.accounts[currentEmail] = reg.accounts[currentEmail] || { email: currentEmail, binId: currentBinId };
-      reg.accounts[currentEmail].passwordHash = newHash;
-      reg.accounts[currentEmail].updatedAt = Date.now();
+      reg.accounts[targetEmail] = reg.accounts[targetEmail] || { email: targetEmail, binId: targetBin };
+      reg.accounts[targetEmail].passwordHash = newHash;
+      reg.accounts[targetEmail].updatedAt = Date.now();
       await fetch(`https://extendsclass.com/api/json-storage/bin/${MASTER_REGISTRY_BIN}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -2443,18 +2551,23 @@ async function handleChangePassword(e) {
     }
 
     currentPasswordHash = newHash;
-    saveStoredAuth(currentEmail, newHash, currentBinId);
+    currentEmail = targetEmail;
+    currentBinId = targetBin;
+    saveStoredAuth(targetEmail, newHash, targetBin);
 
+    const oldPwdInput = document.getElementById('pwd-old');
+    const newPwdInput = document.getElementById('pwd-new');
+    const confirmPwdInput = document.getElementById('pwd-confirm');
     if (oldPwdInput) oldPwdInput.value = '';
     if (newPwdInput) newPwdInput.value = '';
     if (confirmPwdInput) confirmPwdInput.value = '';
 
     updateSyncUI();
-    showSyncModalMsg('✅ Contraseña actualizada con éxito en la nube.', 'success');
-    showToast('🔐 Contraseña actualizada con éxito en la nube');
+    showSyncModalMsg('✅ ¡Contraseña establecida con éxito!', 'success');
+    showToast('🔐 Contraseña establecida con éxito en la nube');
   } catch (err) {
-    console.error("Change password error:", err);
-    showSyncModalMsg('Error al actualizar contraseña: ' + (err.message || err), 'error');
+    console.error("Force set error:", err);
+    showSyncModalMsg('Error al guardar contraseña: ' + (err.message || err), 'error');
   }
 }
 
@@ -2492,9 +2605,9 @@ async function handleDeleteAccount(e) {
     localStorage.removeItem('mortgage_auth_hash');
     localStorage.removeItem('mortgage_auth_bin');
 
-    currentEmail = DEFAULT_USER_EMAIL;
+    currentEmail = '';
     currentPasswordHash = '';
-    currentBinId = DEFAULT_USER_BIN;
+    currentBinId = '';
 
     updateSyncUI('Cuenta Eliminada', '#ef4444');
     if (confirmPwdInput) confirmPwdInput.value = '';
@@ -2511,11 +2624,29 @@ async function handleDeleteAccount(e) {
    AUTHENTICATION: LOGOUT
    ========================================================== */
 function handleLogout() {
+  if (realtimePollInterval) {
+    clearInterval(realtimePollInterval);
+    realtimePollInterval = null;
+  }
+  currentEmail = '';
   currentPasswordHash = '';
-  saveStoredAuth(currentEmail, '', currentBinId);
-  updateSyncUI('Requiere Clave', '#f59e0b');
-  closeSyncModal();
-  showToast("Sesión cerrada. Introduce tu contraseña para volver a sincronizar.");
+  currentBinId = '';
+  try {
+    localStorage.removeItem('mortgage_auth_email');
+    localStorage.removeItem('mortgage_auth_hash');
+    localStorage.removeItem('mortgage_auth_bin');
+  } catch (e) {}
+
+  updateSyncUI('Desconectado', '#64748b');
+  switchSyncTab('login');
+
+  const emailInput = document.getElementById('sync-input-email');
+  if (emailInput) emailInput.value = '';
+  const pwdInput = document.getElementById('sync-input-password');
+  if (pwdInput) pwdInput.value = '';
+
+  showSyncModalMsg('Sesión cerrada por completo. La sincronización se ha detenido.', 'info');
+  showToast("Sesión cerrada por completo");
 }
 
 function showToast(msg) {
