@@ -2108,7 +2108,7 @@ let payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
 const MASTER_REGISTRY_BIN = 'caedfaf';
-const DEFAULT_USER_EMAIL = 'ferjrm@gmail.com';
+const DEFAULT_USER_EMAIL = 'ferjrm@hotmail.com';
 const DEFAULT_USER_BIN = 'ddbcbca';
 
 let currentEmail = DEFAULT_USER_EMAIL;
@@ -2204,7 +2204,10 @@ function hashPassword(pwd) {
 
 function getStoredAuth() {
   try {
-    const email = localStorage.getItem('mortgage_auth_email') || DEFAULT_USER_EMAIL;
+    let email = localStorage.getItem('mortgage_auth_email');
+    if (!email || email === 'ferjrm@gmail.com') {
+      email = DEFAULT_USER_EMAIL;
+    }
     const hash = localStorage.getItem('mortgage_auth_hash') || '';
     const bin = localStorage.getItem('mortgage_auth_bin') || DEFAULT_USER_BIN;
     return { email, hash, bin };
@@ -3106,7 +3109,7 @@ async function scanAndRecoverBackups() {
   try {
     const cloudBins = [
       { id: currentBinId || DEFAULT_USER_BIN, name: currentEmail || DEFAULT_USER_EMAIL },
-      { id: DEFAULT_USER_BIN, name: 'ferjrm@gmail.com' }
+      { id: DEFAULT_USER_BIN, name: 'ferjrm@hotmail.com' }
     ];
     // deduplicate
     const seenBins = new Set();
@@ -4065,7 +4068,7 @@ function handleSyncLogin(e) {
   const pwd = pwdInput ? pwdInput.value.trim() : '';
 
   if (!rawEmail) {
-    showSyncModalMsg('Introduce un correo electrónico o usuario válido.', 'error');
+    showSyncModalMsg('Introduce un correo electrónico o usuario.', 'error');
     return;
   }
   // Normalize aliases for main user
@@ -4076,7 +4079,7 @@ function handleSyncLogin(e) {
   const pwdHash = pwd ? hashPassword(pwd) : '';
   const binId = DEFAULT_USER_BIN;
 
-  // Immediate local activation without freezing on network
+  // Immediate activation
   currentEmail = rawEmail;
   currentPasswordHash = pwdHash;
   currentBinId = binId;
@@ -4091,7 +4094,7 @@ function handleSyncLogin(e) {
   updateDashboardUI();
   updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  showToast(`✅ Sesión iniciada como ${rawEmail}`);
+  showToast(`Conectado como ${rawEmail}`);
 
   // Non-blocking background sync attempt with 2s timeout
   setTimeout(async () => {
@@ -4130,7 +4133,7 @@ function resetAccountPassword(email, binId) {
   updateDashboardUI();
   updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  showToast(`🔓 Acceso restablecido como ${targetEmail}`);
+  showToast(`Acceso restablecido como ${targetEmail}`);
 }
 
 function handleQuickUnlock() {
@@ -4170,14 +4173,14 @@ function handleCreateUser(e) {
     return;
   }
   if (!rawEmail.includes('@') && !rawEmail.includes('.')) {
-    rawEmail = rawEmail + '@gmail.com';
+    rawEmail = rawEmail + '@hotmail.com';
   }
   if (pwd && pwd.length < 4) {
     showSyncModalMsg('La contraseña debe tener al menos 4 caracteres.', 'error');
     return;
   }
   if (pwd && pwd !== confirmPwd) {
-    showSyncModalMsg('❌ Las contraseñas no coinciden.', 'error');
+    showSyncModalMsg('Las contraseñas no coinciden.', 'error');
     return;
   }
 
@@ -4197,7 +4200,7 @@ function handleCreateUser(e) {
   updateDashboardUI();
   updateSyncUI('Conectado', '#10b981');
   closeSyncModal();
-  showToast(`🎉 ¡Cuenta creada con éxito! Conectado como ${rawEmail}`);
+  showToast(`Cuenta creada como ${rawEmail}`);
 }
 
 async function assignPasswordToExisting(rawEmail, pwd, binId) {
