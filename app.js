@@ -345,9 +345,35 @@ function getSyncTopic(email) {
 async function cloudFetchState(email) {
   const norm = normalizeUserEmail(email);
   if (!norm) return null;
-  const topic = getSyncTopic(norm);
 
-  let cloudLatest = null;
+  let cloudData = null;
+
+  // 1. Fetch from primary persistent cloud storage (restful-api.dev)
+  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
+  if (!objId && BUILTIN_USERS[norm]) {
+    objId = BUILTIN_USERS[norm];
+  }
+  if (!objId) {
+    objId = await resolveUserCloudId(norm, currentPasswordHash);
+  }
+
+  if (objId) {
+    try {
+      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId);
+      if (res && res.ok) {
+        const obj = await res.json();
+        if (obj && obj.data && typeof obj.data === 'object') {
+          cloudData = obj.data;
+        }
+      }
+    } catch (err) {
+      console.warn("Cloud fetch restful-api notice:", err);
+    }
+  }
+
+  // 2. Fetch from secondary realtime channel (ntfy.sh)
+  const topic = getSyncTopic(norm);
+  let ntfyData = null;
   if (topic) {
     try {
       const res = await cloudFetch('https://ntfy.sh/' + topic + '/json?poll=1&since=24h');
@@ -361,8 +387,8 @@ async function cloudFetchState(email) {
             if (msgObj.event === 'message' && msgObj.message) {
               const parsed = JSON.parse(msgObj.message);
               if (parsed && typeof parsed === 'object') {
-                if (!cloudLatest || (parsed.updatedAt && parsed.updatedAt > (cloudLatest.updatedAt || 0))) {
-                  cloudLatest = parsed;
+                if (!ntfyData || (parsed.updatedAt && parsed.updatedAt > (ntfyData.updatedAt || 0))) {
+                  ntfyData = parsed;
                 }
               }
             }
@@ -370,14 +396,21 @@ async function cloudFetchState(email) {
         }
       }
     } catch (err) {
-      console.warn("Cloud fetch state notice:", err);
+      console.warn("Cloud fetch ntfy notice:", err);
     }
   }
 
-  // If cloud state was fetched from network, return it
-  if (cloudLatest) return cloudLatest;
+  // 3. Pick the latest data between restful-api and ntfy
+  let bestRemote = null;
+  if (cloudData && ntfyData) {
+    bestRemote = (ntfyData.updatedAt || 0) > (cloudData.updatedAt || 0) ? ntfyData : cloudData;
+  } else {
+    bestRemote = cloudData || ntfyData;
+  }
 
-  // Offline fallback: check local cache backups for this user account
+  if (bestRemote) return bestRemote;
+
+  // 4. Offline fallback: check local cache backups
   try {
     const rawLocal = localStorage.getItem('hipoteca_user_' + norm) || localStorage.getItem('hipoteca_backup_' + norm);
     if (rawLocal) return JSON.parse(rawLocal);
@@ -422,7 +455,6 @@ function isCloudDataDifferent(remoteData) {
 async function cloudPushState(payload) {
   if (!payload || !payload.account) return false;
   const norm = normalizeUserEmail(payload.account);
-  const topic = getSyncTopic(norm);
 
   // Save to local storage backups first
   try {
@@ -431,24 +463,54 @@ async function cloudPushState(payload) {
     localStorage.setItem('hipoteca_backup_' + norm, payloadStr);
   } catch(e) {}
 
-  if (!topic) return false;
+  let success = false;
 
-  try {
-    const res = await cloudFetch('https://ntfy.sh/' + topic, {
-      method: 'POST',
-      headers: {
-        'Title': 'hipoteca_sync_state',
-        'Priority': 'high',
-        'Cache': 'yes',
-        'Content-Type': 'text/plain; charset=utf-8'
-      },
-      body: JSON.stringify(payload)
-    });
-    return res && res.ok;
-  } catch(err) {
-    console.warn("Cloud push notice:", err);
-    return false;
+  // Resolve object ID if needed
+  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
+  if (!objId && BUILTIN_USERS[norm]) {
+    objId = BUILTIN_USERS[norm];
   }
+  if (!objId) {
+    objId = await resolveUserCloudId(norm, payload.passwordHash || '');
+  }
+
+  // 1. Primary Persistent Cloud Storage (restful-api.dev)
+  if (objId) {
+    try {
+      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'hipoteca_user_' + norm,
+          data: payload
+        })
+      });
+      if (res && res.ok) success = true;
+    } catch (err) {
+      console.warn("Cloud push restful-api notice:", err);
+    }
+  }
+
+  // 2. Secondary Realtime Broadcast (ntfy.sh)
+  const topic = getSyncTopic(norm);
+  if (topic) {
+    try {
+      await cloudFetch('https://ntfy.sh/' + topic, {
+        method: 'POST',
+        headers: {
+          'Title': 'hipoteca_sync_state',
+          'Priority': 'high',
+          'Cache': 'yes',
+          'Content-Type': 'text/plain; charset=utf-8'
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch(err) {
+      console.warn("Cloud push ntfy notice:", err);
+    }
+  }
+
+  return success;
 }
 
 let realtimeEventSource = null;
