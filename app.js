@@ -77,14 +77,15 @@ window.addEventListener('click', (e) => {
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
+const PRIMARY_USER_ID = 'ff808181a09d98f701a100d8c5f16a0c';
 const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
 const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
 const BUILTIN_USERS = {
-  'ferjrm@hotmail.com': 'ff808181a09d98f701a100d8c5f16a0c',
-  'fejrm@hotmail.com': 'ff808181a09d98f701a1015eb1a76ac5',
-  'ferjrm@gmail.com': 'ff808181a09d98f701a102d7e0866df3',
-  'ferjrm': 'ff808181a09d98f701a102d7e0866df3',
-  'fejrm': 'ff808181a09d98f701a1015eb1a76ac5'
+  'ferjrm@hotmail.com': PRIMARY_USER_ID,
+  'fejrm@hotmail.com': PRIMARY_USER_ID,
+  'ferjrm@gmail.com': PRIMARY_USER_ID,
+  'ferjrm': PRIMARY_USER_ID,
+  'fejrm': PRIMARY_USER_ID
 };
 let currentObjectId = '';
 let currentEmail = '';
@@ -137,10 +138,11 @@ async function cloudFetch(url, options = {}) {
 function normalizeUserEmail(rawEmail) {
   if (!rawEmail) return '';
   let s = String(rawEmail).trim().toLowerCase();
+  if (s === 'ferjrm' || s === 'fejrm' || s === 'ferjrm@gmail.com' || s === 'fejrm@hotmail.com' || s === 'ferjrm@hotmail.com') {
+    return 'ferjrm@hotmail.com';
+  }
   if (!s.includes('@')) {
-    if (s === 'fejrm') return 'fejrm@hotmail.com';
-    if (s === 'ferjrm') return 'ferjrm@gmail.com';
-    s += '@gmail.com';
+    s += '@hotmail.com';
   }
   return s;
 }
@@ -379,12 +381,6 @@ async function cloudFetchState(email) {
       console.warn("Cloud fetch notice:", err);
     }
   }
-
-  // Offline fallback
-  try {
-    const rawLocal = localStorage.getItem('hipoteca_user_' + norm) || localStorage.getItem('hipoteca_backup_' + norm);
-    if (rawLocal) return JSON.parse(rawLocal);
-  } catch(e) {}
 
   return null;
 }
