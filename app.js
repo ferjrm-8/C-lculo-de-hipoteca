@@ -107,9 +107,9 @@ async function cloudFetch(url, options = {}) {
       const respRaw = window.AndroidBridge.httpRequest(reqUrl, method, headersJson, bodyStr);
       if (respRaw) {
         const parsed = JSON.parse(respRaw);
-        if (parsed && typeof parsed.status === 'number' && parsed.status > 0) {
+        if (parsed && typeof parsed.status === 'number' && parsed.status >= 200 && parsed.status < 300) {
           return {
-            ok: parsed.status >= 200 && parsed.status < 300,
+            ok: true,
             status: parsed.status,
             statusText: parsed.statusText || '',
             json: async () => {
@@ -121,11 +121,25 @@ async function cloudFetch(url, options = {}) {
         }
       }
     } catch (err) {
-      console.warn("AndroidBridge request error:", err);
+      console.warn("AndroidBridge request fallback to fetch:", err);
     }
   }
 
-  return fetch(reqUrl, options);
+  try {
+    const defaultHeaders = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+    const reqOptions = {
+      ...options,
+      headers: { ...defaultHeaders, ...(options.headers || {}) }
+    };
+    const response = await fetch(reqUrl, reqOptions);
+    return response;
+  } catch (err) {
+    console.error("Cloud fetch network error:", err);
+    return null;
+  }
 }
 
 function normalizeUserEmail(rawEmail) {
@@ -2228,12 +2242,20 @@ async function handleCreateUser(e) {
     });
 
     if (!createRes || !createRes.ok) {
-      showSyncModalMsg('Error al conectar con el servidor en la nube. Inténtalo de nuevo.', 'error');
+      showSyncModalMsg('❌ No se pudo conectar con la nube. Comprueba tu conexión a Internet e inténtalo de nuevo.', 'error');
       return;
     }
 
-    const createObj = await createRes.json();
-    const newObjId = createObj.id;
+    let newObjId = '';
+    try {
+      const createObj = await createRes.json();
+      newObjId = createObj ? createObj.id : '';
+    } catch (e) {}
+
+    if (!newObjId) {
+      showSyncModalMsg('❌ Error al generar el registro en la nube. Inténtalo de nuevo.', 'error');
+      return;
+    }
 
     // 4. Save to Master Registry
     if (!regData.users) regData.users = {};
