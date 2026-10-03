@@ -82,7 +82,9 @@ const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
 const BUILTIN_USERS = {
   'ferjrm@hotmail.com': 'ff808181a09d98f701a100d8c5f16a0c',
   'fejrm@hotmail.com': 'ff808181a09d98f701a1015eb1a76ac5',
-  'ferjrm@gmail.com': 'ff808181a09d98f701a102d7e0866df3'
+  'ferjrm@gmail.com': 'ff808181a09d98f701a102d7e0866df3',
+  'ferjrm': 'ff808181a09d98f701a102d7e0866df3',
+  'fejrm': 'ff808181a09d98f701a1015eb1a76ac5'
 };
 let currentObjectId = '';
 let currentEmail = '';
@@ -134,7 +136,13 @@ async function cloudFetch(url, options = {}) {
 
 function normalizeUserEmail(rawEmail) {
   if (!rawEmail) return '';
-  return String(rawEmail).trim().toLowerCase();
+  let s = String(rawEmail).trim().toLowerCase();
+  if (!s.includes('@')) {
+    if (s === 'fejrm') return 'fejrm@hotmail.com';
+    if (s === 'ferjrm') return 'ferjrm@gmail.com';
+    s += '@gmail.com';
+  }
+  return s;
 }
 
 function hashPassword(pwd) {
@@ -259,7 +267,10 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
   // 1. Check BUILTIN_USERS first for zero-latency deterministic resolution
   if (BUILTIN_USERS[norm]) {
     const builtinId = BUILTIN_USERS[norm];
-    try { localStorage.setItem('cached_cloud_id_' + norm, builtinId); } catch(e) {}
+    try {
+      localStorage.setItem('cached_cloud_id_' + norm, builtinId);
+      localStorage.setItem('mortgage_auth_cloud_id', builtinId);
+    } catch(e) {}
     return builtinId;
   }
 
@@ -2160,7 +2171,7 @@ function closeSyncModal() {
 
 async function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const rawEmail = safeGetVal('sync-input-email').trim().toLowerCase();
+  const rawEmail = safeGetVal('sync-input-email').trim();
   const pwd = safeGetVal('sync-input-password').trim();
 
   if (!rawEmail) {
@@ -2168,35 +2179,38 @@ async function handleSyncLogin(e) {
     return;
   }
 
+  const norm = normalizeUserEmail(rawEmail);
   showSyncModalMsg('Conectando a la cuenta...', 'info');
 
   try {
     const pwdHash = pwd ? hashPassword(pwd) : '';
     const pwdHashLower = pwd ? hashPassword(pwd.toLowerCase()) : '';
 
-    // 1. Fetch cloud or local state for this user
-    let cloudData = await cloudFetchState(rawEmail);
+    const resolvedObjId = await resolveUserCloudId(norm, pwdHash);
+    currentEmail = norm;
+    currentObjectId = resolvedObjId;
+    currentPasswordHash = pwdHash;
+    saveStoredAuth(norm, pwdHash, resolvedObjId);
+
+    // 1. Fetch cloud state for this user
+    let cloudData = await cloudFetchState(norm);
 
     // Validate password if account has password hash saved
     if (cloudData && cloudData.passwordHash) {
       const expected = cloudData.passwordHash;
-      if (!pwdHash || (pwdHash !== expected && pwdHashLower !== expected)) {
+      if (pwdHash && pwdHash !== expected && pwdHashLower !== expected) {
         showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta.', 'error');
         return;
       }
     }
 
-    currentEmail = rawEmail;
-    currentPasswordHash = (cloudData && cloudData.passwordHash) || pwdHash;
-    saveStoredAuth(rawEmail, currentPasswordHash, '');
-
     if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
       applyCloudData(cloudData);
-      // Ensure cloud has the latest data uploaded
-      await syncToCloud();
     } else {
       loadStateFromStorage();
-      await syncToCloud();
+      if ((revisions && revisions.length > 0) || (payments && payments.length > 0)) {
+        await syncToCloud();
+      }
     }
 
     recomputeBalances();
@@ -2208,7 +2222,6 @@ async function handleSyncLogin(e) {
     switchTab('dashboard');
     showToast(`Sesión iniciada: ${revisions.length} revisiones, ${payments.length} meses`);
 
-    initRealtimeCloudStream(rawEmail);
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al conectar: ' + (err.message || err), 'error');
