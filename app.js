@@ -26,6 +26,34 @@ const INITIAL_REVISIONS_DEFAULT = [];
 const INITIAL_PAYMENTS_DEFAULT = [];
 let revisions = [];
 let payments = [];
+// ==========================================================================
+// SAFE DOM HELPERS (CRITICAL: Prevents ReferenceError & Null Dereferences)
+// ==========================================================================
+function safeSetText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text !== undefined && text !== null ? String(text) : '';
+}
+
+function safeSetVal(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val !== undefined && val !== null ? String(val) : '';
+}
+
+function safeGetVal(id) {
+  const el = document.getElementById(id);
+  return el ? (el.value || '').trim() : '';
+}
+
+// Global click handler to dismiss modals on backdrop click
+window.addEventListener('click', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('modal-backdrop')) {
+    if (e.target.id === 'payment-modal') closeModal();
+    else if (e.target.id === 'sync-modal') closeSyncModal();
+    else if (e.target.id === 'revision-modal') closeRevisionModal();
+    else if (e.target.id === 'agreement-modal') closeAgreementModal();
+  }
+});
+
 
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
@@ -869,11 +897,19 @@ function openRevisionModal(id = null) {
   }
 
   updateRevisionCalculatedBox();
-  document.getElementById('revision-modal').classList.add('active');
+  const modal = document.getElementById('revision-modal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
 }
 
 function closeRevisionModal() {
-  document.getElementById('revision-modal').classList.remove('active');
+  const modal = document.getElementById('revision-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
 }
 
 function onRevisionCapTotalChange() {
@@ -903,6 +939,10 @@ function onRevisionPctOwner2Change() {
   }
   updateRevisionCalculatedBox();
 }
+
+
+function onRevisionCapLauraChange() { onRevisionCapOwner2Change(); }
+function onRevisionPctLauraChange() { onRevisionPctOwner2Change(); }
 
 function onRevisionFeeChange() {
   updateRevisionCalculatedBox();
@@ -1024,7 +1064,7 @@ function openModal() {
   const delBtn = document.getElementById('btn-delete-row');
   if (delBtn) delBtn.style.display = "none";
 
-  const latest = payments[payments.length - 1];
+  const latest = (payments && payments.length > 0) ? payments[payments.length - 1] : null;
   let y = latest ? latest.year : (new Date()).getFullYear();
   let m = latest ? latest.month + 1 : ((new Date()).getMonth() + 1);
   if (m > 12) { m = 1; y++; }
@@ -1035,15 +1075,16 @@ function openModal() {
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? '📌 Periodo: ' + rev.name + ' (' + rev.pctOwner2.toFixed(2) + '%)' : "📌 Periodo General";
+    const revPct = rev && rev.pctOwner2 != null ? Number(rev.pctOwner2) : 50;
+    badge.textContent = rev ? '📌 Periodo: ' + (rev.name || 'Periodo') + ' (' + revPct.toFixed(2) + '%)' : "📌 Periodo General";
   }
 
-  const fee = rev ? rev.feeTotal : (latest ? latest.totalFee : 0);
-  const pct = rev ? rev.pctOwner2 : (settings.coOwner1Percentage || 50);
-  const co1 = rev ? rev.lauraFee : (fee * (pct / 100));
-  const co2 = rev ? rev.rakFee : (fee - co1);
-  const int = rev ? rev.intTotal : (latest ? latest.interest : 0);
-  const prin = rev ? rev.prinTotal : Math.max(0, fee - int);
+  const fee = rev && rev.feeTotal != null ? Number(rev.feeTotal) : (latest ? Number(latest.totalFee || 0) : 0);
+  const pct = rev && rev.pctOwner2 != null ? Number(rev.pctOwner2) : (Number(settings.coOwner1Percentage) || 50);
+  const co1 = rev && rev.lauraFee != null ? Number(rev.lauraFee) : (fee * (pct / 100));
+  const co2 = rev && rev.rakFee != null ? Number(rev.rakFee) : (fee - co1);
+  const int = rev && rev.intTotal != null ? Number(rev.intTotal) : (latest ? Number(latest.interest || 0) : 0);
+  const prin = rev && rev.prinTotal != null ? Number(rev.prinTotal) : Math.max(0, fee - int);
 
   safeSetVal('p-total-fee', fee > 0 ? fee.toFixed(2) : "0.00");
   safeSetVal('p-laura-pct', pct.toFixed(2));
@@ -1052,18 +1093,21 @@ function openModal() {
   safeSetVal('p-interest', int > 0 ? int.toFixed(2) : "0.00");
   safeSetVal('p-principal', prin > 0 ? prin.toFixed(2) : "0.00");
 
-  safeSetVal('p-community', (latest ? (latest.community || 0) : 0).toFixed(2));
-  safeSetVal('p-electricity', (latest ? (latest.electricity || 0) : 0).toFixed(2));
-  safeSetVal('p-derramas', (latest ? (latest.derramas || 0) : 0).toFixed(2));
+  safeSetVal('p-community', (latest ? Number(latest.community || 0) : 0).toFixed(2));
+  safeSetVal('p-electricity', (latest ? Number(latest.electricity || 0) : 0).toFixed(2));
+  safeSetVal('p-derramas', (latest ? Number(latest.derramas || 0) : 0).toFixed(2));
   safeSetVal('p-insurance-ibi', "0.00");
   safeSetVal('p-other-extra', "0.00");
   safeSetVal('p-laura-extra-amort', "0.00");
-  safeSetVal('p-deposit', (latest ? (latest.deposit || 0) : 0).toFixed(2));
+  safeSetVal('p-deposit', (latest ? Number(latest.deposit || 0) : 0).toFixed(2));
   safeSetVal('p-notes', "");
 
   updateLiveModalSummary();
   const modal = document.getElementById('payment-modal');
-  if (modal) modal.classList.add('active');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
 }
 
 function openEditModal(id) {
@@ -1106,11 +1150,18 @@ function openEditModal(id) {
 
   updateLiveModalSummary();
   const modal = document.getElementById('payment-modal');
-  if (modal) modal.classList.add('active');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
 }
 
 function closeModal() {
-  document.getElementById('payment-modal').classList.remove('active');
+  const modal = document.getElementById('payment-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
 }
 
 function onPaymentDateChange() {
@@ -1181,6 +1232,11 @@ function onCuotaOwner1Change() {
   }
   updateLiveModalSummary();
 }
+
+
+function onLauraPctChange() { onOwner2PctChange(); }
+function onCuotaLauraChange() { onCuotaOwner2Change(); }
+function onCuotaRakChange() { onCuotaOwner1Change(); }
 
 function onInterestChange() {
   const fee = Number(safeGetVal('p-total-fee')) || 0;
@@ -1399,12 +1455,18 @@ function openAgreementModal() {
   safeSetVal('agree-pct-rak', pctR.toFixed(2));
 
   const modal = document.getElementById('agreement-modal');
-  if (modal) modal.classList.add('active');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
 }
 
 function closeAgreementModal() {
   const modal = document.getElementById('agreement-modal');
-  if (modal) modal.classList.remove('active');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
 }
 
 function submitAgreementHandler(e) {
@@ -1518,15 +1580,68 @@ function importDataJSON(e) {
   reader.readAsText(file);
 }
 
-function resetAllData() {
-  if (confirm("¿Estás seguro de restablecer todos los datos iniciales?")) {
-    payments = getOriginalExcelSeed();
-    recomputeBalances();
-    saveStateToStorage();
-    updateDashboardUI();
-    showToast("Datos restablecidos");
-  }
+
+function forceCloudSave() {
+  return triggerManualSync();
 }
+
+function clearAllData() {
+  if (!confirm('¿Estás seguro de que deseas borrar todos los pagos y revisiones registrados?')) return;
+  payments = [];
+  revisions = [];
+  recomputeBalances();
+  updateDashboardUI();
+  renderHistoryTable();
+  renderRevisionsTable();
+  saveStateToStorage();
+  syncToCloud();
+  showToast('Todos los datos han sido borrados');
+}
+
+function exportDataCSV() {
+  if (!payments || payments.length === 0) {
+    showToast('No hay pagos registrados para exportar');
+    return;
+  }
+  const headers = ['ID', 'Año', 'Mes', 'CuotaTotal', 'Propietario2', 'Propietario1', 'Interes', 'Amortizacion', 'Comunidad', 'Luz', 'Derramas', 'Seguro_IBI', 'Otros', 'AporteExtra', 'Ingreso', 'Notas'];
+  const rows = payments.map(p => [
+    p.id, p.year, p.month, p.totalFee, p.co1, p.co2, p.interest, p.principal,
+    p.community, p.electricity, p.derramas, (p.insurance || 0) + (p.ibi || 0), p.otherExtra, p.lauraExtraAmort, p.deposit, `"${(p.notes || '').replace(/"/g, '""')}"`
+  ]);
+  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `hipoteca_pagos_${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function resetToExcelOriginal() {
+  if (!confirm('¿Deseas restablecer los datos con una plantilla de ejemplo limpia?')) return;
+  settings = {
+    initialCapital: 120000,
+    totalTermYears: 25,
+    annualInterestRate: 2.50,
+    coOwner1Name: "1º Propietario",
+    coOwner2Name: "2º Propietario",
+    coOwner1Percentage: 50.00,
+    coOwner2Percentage: 50.00,
+    internalDebtOwner1: 60000,
+    internalDebtOwner2: 60000
+  };
+  revisions = [];
+  payments = [];
+  recomputeBalances();
+  updateDashboardUI();
+  renderHistoryTable();
+  renderRevisionsTable();
+  saveStateToStorage();
+  syncToCloud();
+  showToast('Plantilla de ejemplo cargada');
+}
+
 
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNC & MODAL HANDLERS
