@@ -2190,7 +2190,7 @@ let payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS_DEFAULT));
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
 const MASTER_REGISTRY_BIN = 'caedfaf';
-const DEFAULT_USER_EMAIL = 'ferjrm@hotmail.com';
+const DEFAULT_USER_EMAIL = 'ferjrm@gmail.com';
 const DEFAULT_USER_BIN = 'ddbcbca';
 
 let currentEmail = DEFAULT_USER_EMAIL;
@@ -2199,6 +2199,24 @@ let currentPasswordHash = '';
 let localLastSyncTime = 0;
 let realtimePollInterval = null;
 let isSyncingIncoming = false;
+
+function normalizeUserEmail(rawEmail) {
+  if (!rawEmail) return 'ferjrm@gmail.com';
+  const clean = String(rawEmail).trim().toLowerCase();
+  if (clean === 'ferjrm' || clean === 'ferjrm@gmail.com' || clean === 'ferjrm@hotmail.com' || clean === 'mi_sistema_hipoteca') {
+    return 'ferjrm@gmail.com';
+  }
+  return clean;
+}
+
+function getBinForEmail(email) {
+  const norm = normalizeUserEmail(email);
+  if (norm === 'ferjrm@gmail.com') {
+    return 'ddbcbca';
+  }
+  const h = hashPassword(norm);
+  return (h && h.length >= 7) ? h.substring(0, 7) : 'ddbcbca';
+}
 
 function hashPassword(pwd) {
   if (!pwd) return '';
@@ -2286,23 +2304,23 @@ function hashPassword(pwd) {
 
 function getStoredAuth() {
   try {
-    let email = localStorage.getItem('mortgage_auth_email');
-    if (!email || email === 'ferjrm@gmail.com') {
-      email = DEFAULT_USER_EMAIL;
-    }
+    const rawEmail = localStorage.getItem('mortgage_auth_email') || 'ferjrm@gmail.com';
+    const email = normalizeUserEmail(rawEmail);
     const hash = localStorage.getItem('mortgage_auth_hash') || '';
-    const bin = localStorage.getItem('mortgage_auth_bin') || DEFAULT_USER_BIN;
+    const bin = getBinForEmail(email);
     return { email, hash, bin };
   } catch (e) {
-    return { email: DEFAULT_USER_EMAIL, hash: '', bin: DEFAULT_USER_BIN };
+    return { email: 'ferjrm@gmail.com', hash: '', bin: 'ddbcbca' };
   }
 }
 
 function saveStoredAuth(email, hash, bin) {
   try {
-    localStorage.setItem('mortgage_auth_email', email);
-    localStorage.setItem('mortgage_auth_hash', hash);
-    localStorage.setItem('mortgage_auth_bin', bin);
+    const norm = normalizeUserEmail(email);
+    const effBin = getBinForEmail(norm);
+    localStorage.setItem('mortgage_auth_email', norm);
+    localStorage.setItem('mortgage_auth_hash', hash || '');
+    localStorage.setItem('mortgage_auth_bin', effBin);
   } catch (e) {}
 }
 
@@ -3986,7 +4004,10 @@ function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
 
 async function initCloudSync() {
   updateSyncUI('Sincronizando...', '#f59e0b');
-  const targetBin = currentBinId || DEFAULT_USER_BIN;
+  const normEmail = normalizeUserEmail(currentEmail || DEFAULT_USER_EMAIL);
+  const targetBin = getBinForEmail(normEmail);
+  currentEmail = normEmail;
+  currentBinId = targetBin;
   let cloudApplied = false;
 
   try {
@@ -4021,6 +4042,11 @@ function applyCloudData(data) {
   localLastSyncTime = data.updatedAt || Date.now();
   lastCloudTimestampText = data.lastUpdatedText || new Date(localLastSyncTime).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
+  if (data.account) {
+    currentEmail = normalizeUserEmail(data.account);
+    currentBinId = getBinForEmail(currentEmail);
+  }
+
   if (data.settings) settings = { ...settings, ...data.settings };
   if (Array.isArray(data.revisions) && data.revisions.length > 0) {
     revisions = data.revisions;
@@ -4040,6 +4066,7 @@ function applyCloudData(data) {
     localStorage.setItem('hipoteca_payments_v7', payStr);
     localStorage.setItem('hipoteca_payments_v6', payStr);
     localStorage.setItem('hipoteca_last_updated_time', String(localLastSyncTime));
+    saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
   } catch (e) {}
 
   recomputeBalances();
@@ -4051,8 +4078,10 @@ function applyCloudData(data) {
 async function syncToCloud() {
   if (isSyncingIncoming) return;
 
-  const targetBin = currentBinId || DEFAULT_USER_BIN;
-  if (!targetBin) return;
+  const normEmail = normalizeUserEmail(currentEmail || DEFAULT_USER_EMAIL);
+  const targetBin = getBinForEmail(normEmail);
+  currentEmail = normEmail;
+  currentBinId = targetBin;
 
   const now = Date.now();
   localLastSyncTime = now;
@@ -4068,7 +4097,7 @@ async function syncToCloud() {
   }
 
   const payload = {
-    account: currentEmail || DEFAULT_USER_EMAIL,
+    account: normEmail,
     passwordHash: effectiveHash,
     updatedAt: now,
     lastUpdatedText: lastCloudTimestampText,
@@ -4092,7 +4121,7 @@ async function syncToCloud() {
   if (window.firebaseSync && window.firebaseSync.db) {
     const { db, doc, setDoc } = window.firebaseSync;
     try {
-      const userDocId = sanitizeSyncKey(currentEmail || DEFAULT_USER_EMAIL);
+      const userDocId = sanitizeSyncKey(normEmail);
       const docRef = doc(db, 'mortgages', userDocId);
       setDoc(docRef, payload, { merge: true }).then(() => {
         updateSyncUI('● En Tiempo Real', '#10b981');
@@ -4103,13 +4132,14 @@ async function syncToCloud() {
 
 function startRealtimePoller() {
   if (realtimePollInterval) clearInterval(realtimePollInterval);
-  const targetBin = currentBinId || DEFAULT_USER_BIN;
-  if (!targetBin) return;
+  const normEmail = normalizeUserEmail(currentEmail || DEFAULT_USER_EMAIL);
+  const targetBin = getBinForEmail(normEmail);
 
   realtimePollInterval = setInterval(async () => {
     if (isSyncingIncoming) return;
     try {
-      const activeBin = currentBinId || DEFAULT_USER_BIN;
+      const activeEmail = normalizeUserEmail(currentEmail || DEFAULT_USER_EMAIL);
+      const activeBin = getBinForEmail(activeEmail);
       const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${activeBin}?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
@@ -4121,7 +4151,7 @@ function startRealtimePoller() {
         }
       }
     } catch (err) {}
-  }, 4000);
+  }, 3000);
 }
 
 async function triggerManualSync() {
@@ -4130,7 +4160,8 @@ async function triggerManualSync() {
   updateSyncUI('Sincronizando...', '#f59e0b');
 
   let success = false;
-  const targetBin = currentBinId || DEFAULT_USER_BIN;
+  const normEmail = normalizeUserEmail(currentEmail || DEFAULT_USER_EMAIL);
+  const targetBin = getBinForEmail(normEmail);
 
   try {
     const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${targetBin}?t=${Date.now()}`);
