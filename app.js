@@ -328,43 +328,128 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
 
   return '';
 }
-let firestoreUnsubscribe = null;
-
-function sanitizeSyncKey(val) {
-  const norm = normalizeUserEmail(val || currentEmail);
-  if (!norm) return 'anonymous';
-  return norm.replace(/[/\#$.[]]/g, '_');
+function getSyncTopic(email) {
+  const norm = normalizeUserEmail(email);
+  if (!norm) return '';
+  return 'hipoteca_sync_' + hashPassword(norm).substring(0, 24);
 }
 
-function initFirebaseSync() {
-  if (!window.firebaseSync || !window.firebaseSync.db || !currentEmail) return;
+async function cloudFetchState(email) {
+  const norm = normalizeUserEmail(email);
+  if (!norm) return null;
+  const topic = getSyncTopic(norm);
 
-  const { db, doc, onSnapshot } = window.firebaseSync;
-  const userDocId = sanitizeSyncKey(currentEmail);
-
-  if (firestoreUnsubscribe) {
-    try { firestoreUnsubscribe(); } catch(e) {}
-    firestoreUnsubscribe = null;
+  let cloudLatest = null;
+  if (topic) {
+    try {
+      const res = await cloudFetch('https://ntfy.sh/' + topic + '/json?poll=1&since=24h');
+      if (res && res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msgObj = JSON.parse(line);
+            if (msgObj.event === 'message' && msgObj.message) {
+              const parsed = JSON.parse(msgObj.message);
+              if (parsed && typeof parsed === 'object') {
+                if (!cloudLatest || (parsed.updatedAt && parsed.updatedAt > (cloudLatest.updatedAt || 0))) {
+                  cloudLatest = parsed;
+                }
+              }
+            }
+          } catch(e) {}
+        }
+      }
+    } catch (err) {
+      console.warn("Cloud fetch state notice:", err);
+    }
   }
 
+  // Check local cache backups for this user account
+  let localData = null;
   try {
-    const docRef = doc(db, 'mortgages', userDocId);
-    firestoreUnsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data && (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings)) {
-          if (data.updatedAt && data.updatedAt > localLastSyncTime) {
+    const rawLocal = localStorage.getItem('hipoteca_user_' + norm) || localStorage.getItem('hipoteca_backup_' + norm);
+    if (rawLocal) localData = JSON.parse(rawLocal);
+  } catch(e) {}
+
+  if (!cloudLatest) return localData;
+  if (!localData) return cloudLatest;
+
+  // Smart resolution: If one source has revisions/payments and the other is empty, pick the one with data
+  const cloudRevs = Array.isArray(cloudLatest.revisions) ? cloudLatest.revisions.length : 0;
+  const localRevs = Array.isArray(localData.revisions) ? localData.revisions.length : 0;
+  const cloudPays = Array.isArray(cloudLatest.payments) ? cloudLatest.payments.length : 0;
+  const localPays = Array.isArray(localData.payments) ? localData.payments.length : 0;
+
+  if (localRevs > cloudRevs || localPays > cloudPays) {
+    return localData;
+  }
+  if (cloudRevs > localRevs || cloudPays > localPays) {
+    return cloudLatest;
+  }
+
+  return (cloudLatest.updatedAt || 0) >= (localData.updatedAt || 0) ? cloudLatest : localData;
+}
+
+async function cloudPushState(payload) {
+  if (!payload || !payload.account) return false;
+  const norm = normalizeUserEmail(payload.account);
+  const topic = getSyncTopic(norm);
+
+  // Save to local storage backups first
+  try {
+    const payloadStr = JSON.stringify(payload);
+    localStorage.setItem('hipoteca_user_' + norm, payloadStr);
+    localStorage.setItem('hipoteca_backup_' + norm, payloadStr);
+  } catch(e) {}
+
+  if (!topic) return false;
+
+  try {
+    const res = await cloudFetch('https://ntfy.sh/' + topic, {
+      method: 'POST',
+      headers: {
+        'Title': 'hipoteca_sync_state',
+        'Priority': 'high',
+        'Cache': 'yes',
+        'Content-Type': 'text/plain; charset=utf-8'
+      },
+      body: JSON.stringify(payload)
+    });
+    return res && res.ok;
+  } catch(err) {
+    console.warn("Cloud push notice:", err);
+    return false;
+  }
+}
+
+let realtimeEventSource = null;
+
+function initRealtimeCloudStream(email) {
+  if (realtimeEventSource) {
+    try { realtimeEventSource.close(); } catch(e) {}
+    realtimeEventSource = null;
+  }
+
+  const topic = getSyncTopic(email);
+  if (!topic || typeof EventSource === 'undefined') return;
+
+  try {
+    realtimeEventSource = new EventSource('https://ntfy.sh/' + topic + '/sse');
+    realtimeEventSource.onmessage = (e) => {
+      try {
+        const obj = JSON.parse(e.data);
+        if (obj.event === 'message' && obj.message) {
+          const data = JSON.parse(obj.message);
+          if (data && data.updatedAt && data.updatedAt > localLastSyncTime) {
             applyCloudData(data);
             updateSyncUI('● En Tiempo Real', '#10b981');
           }
         }
-      }
-    }, (error) => {
-      console.warn("Firestore snapshot notice:", error);
-    });
-  } catch (err) {
-    console.warn("Firebase sync notice:", err);
-  }
+      } catch(err) {}
+    };
+  } catch(e) {}
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -381,7 +466,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     updateSyncUI('● En Tiempo Real', '#10b981');
 
     await initCloudSync();
-    initFirebaseSync();
+    initRealtimeCloudStream(currentEmail);
     startRealtimePoller();
   } else {
     // 100% clean zero state for guest/no-session
@@ -1890,52 +1975,18 @@ async function initCloudSync() {
   }
   updateSyncUI('Sincronizando...', '#f59e0b');
 
-  if (!currentObjectId) {
-    currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
-    if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
-  }
-
-  if (!currentObjectId) {
-    updateSyncUI('● En Tiempo Real', '#10b981');
-    return;
-  }
-
-  let cloudApplied = false;
   try {
-    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
-    if (res && res.ok) {
-      const obj = await res.json();
-      const cloudData = obj.data;
-      const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
-      if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
-        const cloudTime = cloudData.updatedAt || 0;
-        const localHasData = (payments && payments.length > 0) || (revisions && revisions.length > 0);
-        const cloudHasData = (cloudData.payments && cloudData.payments.length > 0) || (cloudData.revisions && cloudData.revisions.length > 0);
-
-        if (cloudTime > localTime) {
-          applyCloudData(cloudData);
-          cloudApplied = true;
-        } else if (localTime > cloudTime) {
-          await syncToCloud();
-          cloudApplied = true;
-        } else if (cloudHasData && !localHasData) {
-          applyCloudData(cloudData);
-          cloudApplied = true;
-        } else if (localHasData && !cloudHasData) {
-          await syncToCloud();
-          cloudApplied = true;
-        } else {
-          applyCloudData(cloudData);
-          cloudApplied = true;
-        }
+    const cloudData = await cloudFetchState(currentEmail);
+    if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
+      applyCloudData(cloudData);
+    } else {
+      loadStateFromStorage();
+      if ((payments && payments.length > 0) || (revisions && revisions.length > 0)) {
+        await syncToCloud();
       }
     }
   } catch (err) {
-    console.warn("Init cloud sync fetch notice:", err);
-  }
-
-  if (!cloudApplied && ((payments && payments.length > 0) || (revisions && revisions.length > 0))) {
-    await syncToCloud();
+    console.warn("Init cloud sync notice:", err);
   }
 
   updateSyncUI('● En Tiempo Real', '#10b981');
@@ -1957,14 +2008,18 @@ function applyCloudData(data) {
 
   try {
     if (currentEmail) {
-      const userKey = 'hipoteca_user_' + currentEmail;
-      localStorage.setItem(userKey, JSON.stringify({
+      const userKey = 'hipoteca_user_' + normalizeUserEmail(currentEmail);
+      const payloadStr = JSON.stringify({
         account: currentEmail,
+        passwordHash: currentPasswordHash || '',
         settings,
         revisions,
         payments,
-        updatedAt: localLastSyncTime
-      }));
+        updatedAt: localLastSyncTime,
+        lastUpdatedText: lastCloudTimestampText
+      });
+      localStorage.setItem(userKey, payloadStr);
+      localStorage.setItem('hipoteca_backup_' + normalizeUserEmail(currentEmail), payloadStr);
       localStorage.setItem('hipoteca_last_updated_time', String(localLastSyncTime));
     }
   } catch (e) {}
@@ -1998,57 +2053,35 @@ async function syncToCloud() {
     payments: Array.isArray(payments) ? payments : []
   };
 
-  // 1. Primary Sync: Firebase Firestore Realtime (instant, unmetered, push-based)
-  if (window.firebaseSync && window.firebaseSync.db && window.firebaseSync.setDoc && window.firebaseSync.doc) {
-    try {
-      const { db, doc, setDoc } = window.firebaseSync;
-      const userDocId = sanitizeSyncKey(currentEmail);
-      await setDoc(doc(db, 'mortgages', userDocId), payload);
-      updateSyncUI('● En Tiempo Real', '#10b981');
-    } catch(fsErr) {
-      console.warn("Firestore save notice:", fsErr);
-    }
-  }
-
-  // 2. Also save to local user cache
-  try {
-    const userKey = 'hipoteca_user_' + currentEmail;
-    localStorage.setItem(userKey, JSON.stringify(payload));
-  } catch(e) {}
+  // Push to cloud topic and local cache
+  await cloudPushState(payload);
+  updateSyncUI('● En Tiempo Real', '#10b981');
 }
 
 async function pollCloudUpdates() {
   if (isSyncingIncoming || !currentEmail) return;
 
-  // 1. Check Firestore
-  if (window.firebaseSync && window.firebaseSync.db && window.firebaseSync.getDoc && window.firebaseSync.doc) {
-    try {
-      const { db, doc, getDoc } = window.firebaseSync;
-      const userDocId = sanitizeSyncKey(currentEmail);
-      const snap = await getDoc(doc(db, 'mortgages', userDocId));
-      if (snap && snap.exists()) {
-        const data = snap.data();
-        if (data) {
-          const cloudUpdatedAt = Number(data.updatedAt) || 0;
-          const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
-          const cloudRevsLen = Array.isArray(data.revisions) ? data.revisions.length : 0;
-          const cloudPaysLen = Array.isArray(data.payments) ? data.payments.length : 0;
-          const localRevsLen = Array.isArray(revisions) ? revisions.length : 0;
-          const localPaysLen = Array.isArray(payments) ? payments.length : 0;
+  try {
+    const data = await cloudFetchState(currentEmail);
+    if (data) {
+      const cloudUpdatedAt = Number(data.updatedAt) || 0;
+      const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
+      const cloudRevsLen = Array.isArray(data.revisions) ? data.revisions.length : 0;
+      const cloudPaysLen = Array.isArray(data.payments) ? data.payments.length : 0;
+      const localRevsLen = Array.isArray(revisions) ? revisions.length : 0;
+      const localPaysLen = Array.isArray(payments) ? payments.length : 0;
 
-          const hasDifferentCounts = (cloudRevsLen !== localRevsLen) || (cloudPaysLen !== localPaysLen);
-          const hasNewerCloudTime = cloudUpdatedAt > (localTime + 100);
+      const hasDifferentCounts = (cloudRevsLen !== localRevsLen) || (cloudPaysLen !== localPaysLen);
+      const hasNewerCloudTime = cloudUpdatedAt > (localTime + 100);
 
-          if (hasNewerCloudTime || (hasDifferentCounts && localLastSyncTime !== cloudUpdatedAt)) {
-            if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
-              applyCloudData(data);
-            }
-          }
+      if (hasNewerCloudTime || (hasDifferentCounts && localLastSyncTime !== cloudUpdatedAt)) {
+        if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
+          applyCloudData(data);
         }
       }
-    } catch (err) {
-      console.warn("Poll cloud update notice:", err);
     }
+  } catch (err) {
+    console.warn("Poll cloud update notice:", err);
   }
 }
 
@@ -2061,7 +2094,7 @@ function startRealtimePoller() {
 
   realtimePollInterval = setInterval(() => {
     pollCloudUpdates();
-  }, 2000);
+  }, 4000);
 }
 
 // Auto-sync on tab visibility or window focus
@@ -2088,22 +2121,15 @@ async function triggerManualSync() {
   updateSyncUI('Sincronizando...', '#f59e0b');
 
   let success = false;
-  if (window.firebaseSync && window.firebaseSync.db && window.firebaseSync.getDoc && window.firebaseSync.doc) {
-    try {
-      const { db, doc, getDoc } = window.firebaseSync;
-      const userDocId = sanitizeSyncKey(currentEmail);
-      const snap = await getDoc(doc(db, 'mortgages', userDocId));
-      if (snap && snap.exists()) {
-        const cloudData = snap.data();
-        if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
-          applyCloudData(cloudData);
-          showToast(`Sincronizado: ${revisions.length} revisiones, ${payments.length} meses`);
-          success = true;
-        }
-      }
-    } catch(e) {
-      console.warn("Manual sync firestore notice:", e);
+  try {
+    const cloudData = await cloudFetchState(currentEmail);
+    if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
+      applyCloudData(cloudData);
+      showToast(`Sincronizado: ${revisions.length} revisiones, ${payments.length} meses`);
+      success = true;
     }
+  } catch(e) {
+    console.warn("Manual sync notice:", e);
   }
 
   if (!success) {
@@ -2158,31 +2184,11 @@ async function handleSyncLogin(e) {
   try {
     const pwdHash = pwd ? hashPassword(pwd) : '';
     const pwdHashLower = pwd ? hashPassword(pwd.toLowerCase()) : '';
-    let cloudData = null;
 
-    // 1. Fetch from Firestore directly
-    if (window.firebaseSync && window.firebaseSync.db && window.firebaseSync.getDoc && window.firebaseSync.doc) {
-      try {
-        const { db, doc, getDoc } = window.firebaseSync;
-        const userDocId = sanitizeSyncKey(rawEmail);
-        const snap = await getDoc(doc(db, 'mortgages', userDocId));
-        if (snap && snap.exists()) {
-          cloudData = snap.data();
-        }
-      } catch (fsErr) {
-        console.warn("Firestore login fetch notice:", fsErr);
-      }
-    }
+    // 1. Fetch cloud or local state for this user
+    let cloudData = await cloudFetchState(rawEmail);
 
-    // 2. Fallback to local user cache if cloud document not yet created
-    if (!cloudData) {
-      try {
-        const localCached = localStorage.getItem('hipoteca_user_' + rawEmail);
-        if (localCached) cloudData = JSON.parse(localCached);
-      } catch(e) {}
-    }
-
-    // Validate password if account has password
+    // Validate password if account has password hash saved
     if (cloudData && cloudData.passwordHash) {
       const expected = cloudData.passwordHash;
       if (!pwdHash || (pwdHash !== expected && pwdHashLower !== expected)) {
@@ -2197,6 +2203,8 @@ async function handleSyncLogin(e) {
 
     if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
       applyCloudData(cloudData);
+      // Ensure cloud has the latest data uploaded
+      await syncToCloud();
     } else {
       loadStateFromStorage();
       await syncToCloud();
@@ -2211,7 +2219,7 @@ async function handleSyncLogin(e) {
     switchTab('dashboard');
     showToast(`Sesión iniciada: ${revisions.length} revisiones, ${payments.length} meses`);
 
-    initFirebaseSync();
+    initRealtimeCloudStream(rawEmail);
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al conectar: ' + (err.message || err), 'error');
@@ -2237,18 +2245,26 @@ async function handleCreateUser(e) {
     return;
   }
 
-  showSyncModalMsg('Creando cuenta en la nube...', 'info');
+  showSyncModalMsg('Comprobando cuenta...', 'info');
 
   try {
+    const existing = await cloudFetchState(rawEmail);
+    if (existing && existing.account && (existing.passwordHash || (Array.isArray(existing.revisions) && existing.revisions.length > 0))) {
+      showSyncModalMsg('Esta cuenta ya existe en la nube. Usa la pestaña "Iniciar Sesión".', 'error');
+      return;
+    }
+
     const pwdHash = pwd ? hashPassword(pwd) : '';
     currentEmail = rawEmail;
     currentPasswordHash = pwdHash;
     saveStoredAuth(rawEmail, pwdHash, '');
 
-    // New account starts clean/zero
-    settings = getDefaultZeroSettings();
-    revisions = [];
-    payments = [];
+    // If local device has revisions, keep them! Otherwise start zero.
+    if (!revisions || revisions.length === 0) {
+      settings = getDefaultZeroSettings();
+      revisions = [];
+      payments = [];
+    }
 
     recomputeBalances();
     updateDashboardUI();
@@ -2260,7 +2276,7 @@ async function handleCreateUser(e) {
     showToast('Cuenta creada como ' + rawEmail);
 
     await syncToCloud();
-    initFirebaseSync();
+    initRealtimeCloudStream(rawEmail);
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al crear cuenta: ' + err.message, 'error');
@@ -2307,29 +2323,21 @@ async function handleDeleteAccount(e) {
   showSyncModalMsg('Eliminando cuenta...', 'info');
 
   try {
-    if (currentObjectId) {
-      await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId, { method: 'DELETE' }).catch(() => {});
+    const norm = normalizeUserEmail(currentEmail);
+    localStorage.removeItem('hipoteca_user_' + norm);
+    localStorage.removeItem('hipoteca_backup_' + norm);
 
-      const regRes = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
-      if (regRes.ok) {
-        const regObj = await regRes.json();
-        const regData = regObj.data || {};
-        if (regData.users && regData.users[currentEmail]) {
-          delete regData.users[currentEmail];
-          regData.updatedAt = Date.now();
-          await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: 'hipoteca_sync_registry_master',
-              data: regData
-            })
-          }).catch(() => {});
-        }
-      }
-    }
+    // Push empty deleted marker to topic
+    await cloudPushState({
+      account: norm,
+      passwordHash: '',
+      updatedAt: Date.now(),
+      deleted: true,
+      settings: getDefaultZeroSettings(),
+      revisions: [],
+      payments: []
+    });
 
-    localStorage.removeItem('hipoteca_user_' + currentEmail);
     await handleLogout();
     showToast('Cuenta eliminada con éxito.');
   } catch (err) {
