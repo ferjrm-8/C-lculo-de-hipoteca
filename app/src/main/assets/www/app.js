@@ -79,6 +79,10 @@ window.addEventListener('click', (e) => {
    ========================================================== */
 const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
 const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
+const BUILTIN_USERS = {
+  'ferjrm@hotmail.com': 'ff808181a09d98f701a100d8c5f16a0c',
+  'fejrm@hotmail.com': 'ff808181a09d98f701a1015eb1a76ac5'
+};
 let currentObjectId = '';
 let currentEmail = '';
 let currentBinId = '';
@@ -243,21 +247,22 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
   const norm = normalizeUserEmail(rawEmail);
   if (!norm) return '';
 
-  // 1. Check local cache first for instant resolution and offline/cache resilience
+  // 1. Check BUILTIN_USERS first for zero-latency deterministic resolution
+  if (BUILTIN_USERS[norm]) {
+    const builtinId = BUILTIN_USERS[norm];
+    try { localStorage.setItem('cached_cloud_id_' + norm, builtinId); } catch(e) {}
+    return builtinId;
+  }
+
+  // 2. Check local cache
   try {
     const cachedId = localStorage.getItem('cached_cloud_id_' + norm);
     if (cachedId) {
-      const testRes = await cloudFetch(CLOUD_API_BASE + '/' + cachedId + '?t=' + Date.now()).catch(() => null);
-      if (testRes && testRes.ok) {
-        const testObj = await testRes.json().catch(() => null);
-        if (testObj && testObj.data && (normalizeUserEmail(testObj.data.account) === norm || !testObj.data.account)) {
-          return cachedId;
-        }
-      }
+      return cachedId;
     }
   } catch (e) {}
 
-  // 2. Fetch from Master Registry with retries
+  // 3. Fetch from Master Registry with retries
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const regRes = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
@@ -315,7 +320,7 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
     }
   }
 
-  // 3. Fallback to cached id if registry was unreachable
+  // 4. Fallback to cached id if registry was unreachable
   try {
     const fallbackId = localStorage.getItem('cached_cloud_id_' + norm);
     if (fallbackId) return fallbackId;
@@ -2016,6 +2021,43 @@ async function syncToCloud() {
   }
 }
 
+async function pollCloudUpdates() {
+  if (isSyncingIncoming || !currentEmail) return;
+
+  if (!currentObjectId) {
+    currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
+    if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
+  }
+  if (!currentObjectId) return;
+
+  try {
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
+    if (res && res.ok) {
+      const obj = await res.json();
+      const data = obj.data;
+      if (!data) return;
+
+      const cloudUpdatedAt = Number(data.updatedAt) || 0;
+      const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
+      const cloudRevsLen = Array.isArray(data.revisions) ? data.revisions.length : 0;
+      const cloudPaysLen = Array.isArray(data.payments) ? data.payments.length : 0;
+      const localRevsLen = Array.isArray(revisions) ? revisions.length : 0;
+      const localPaysLen = Array.isArray(payments) ? payments.length : 0;
+
+      const hasDifferentCounts = (cloudRevsLen !== localRevsLen) || (cloudPaysLen !== localPaysLen);
+      const hasNewerCloudTime = cloudUpdatedAt > (localTime + 100);
+
+      if (hasNewerCloudTime || (hasDifferentCounts && localLastSyncTime !== cloudUpdatedAt)) {
+        if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
+          applyCloudData(data);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Poll cloud update notice:", err);
+  }
+}
+
 function startRealtimePoller() {
   if (realtimePollInterval) {
     clearInterval(realtimePollInterval);
@@ -2023,42 +2065,22 @@ function startRealtimePoller() {
   }
   if (!currentEmail) return;
 
-  realtimePollInterval = setInterval(async () => {
-    if (isSyncingIncoming) return;
-    if (!currentEmail) return;
-
-    if (!currentObjectId) {
-      currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
-      if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
-    }
-    if (!currentObjectId) return;
-
-    try {
-      const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
-      if (res && res.ok) {
-        const obj = await res.json();
-        const data = obj.data;
-        if (!data) return;
-
-        const cloudUpdatedAt = Number(data.updatedAt) || 0;
-        const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
-        const cloudRevsLen = Array.isArray(data.revisions) ? data.revisions.length : 0;
-        const cloudPaysLen = Array.isArray(data.payments) ? data.payments.length : 0;
-        const localRevsLen = Array.isArray(revisions) ? revisions.length : 0;
-        const localPaysLen = Array.isArray(payments) ? payments.length : 0;
-
-        const hasDifferentCounts = (cloudRevsLen !== localRevsLen) || (cloudPaysLen !== localPaysLen);
-        const hasNewerCloudTime = cloudUpdatedAt > (localTime + 100);
-
-        if (hasNewerCloudTime || (hasDifferentCounts && localLastSyncTime !== cloudUpdatedAt)) {
-          if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
-            applyCloudData(data);
-          }
-        }
-      }
-    } catch (err) {}
+  realtimePollInterval = setInterval(() => {
+    pollCloudUpdates();
   }, 2000);
 }
+
+// Auto-sync on tab visibility or window focus
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentEmail) {
+    pollCloudUpdates();
+  }
+});
+window.addEventListener('focus', () => {
+  if (currentEmail) {
+    pollCloudUpdates();
+  }
+});
 
 async function triggerManualSync() {
   if (!currentEmail) {
@@ -2083,20 +2105,11 @@ async function triggerManualSync() {
       if (res && res.ok) {
         const obj = await res.json();
         const cloudData = obj.data;
-        const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
-        const cloudTime = (cloudData && cloudData.updatedAt) || 0;
-
-        const localHasData = (payments && payments.length > 0) || (revisions && revisions.length > 0);
-        const cloudHasData = cloudData && ((cloudData.payments && cloudData.payments.length > 0) || (cloudData.revisions && cloudData.revisions.length > 0));
-
-        if (cloudTime > localTime || (cloudHasData && !localHasData)) {
+        if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
           applyCloudData(cloudData);
-          showToast('Sincronizado desde la nube (' + payments.length + ' meses)');
-        } else {
-          await syncToCloud();
-          showToast('Sincronizados ' + payments.length + ' meses en la nube');
+          showToast('Sincronizado desde la nube (' + (revisions.length) + ' revisiones, ' + (payments.length) + ' meses)');
+          success = true;
         }
-        success = true;
       }
     }
   } catch (e) {
@@ -2142,8 +2155,8 @@ function closeSyncModal() {
 
 async function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const rawEmail = safeGetVal('sync-input-email').toLowerCase();
-  const pwd = safeGetVal('sync-input-password');
+  const rawEmail = safeGetVal('sync-input-email').trim().toLowerCase();
+  const pwd = safeGetVal('sync-input-password').trim();
 
   if (!rawEmail) {
     showSyncModalMsg('Introduce tu correo electrónico o usuario.', 'error');
@@ -2154,6 +2167,7 @@ async function handleSyncLogin(e) {
 
   try {
     const pwdHash = pwd ? hashPassword(pwd) : '';
+    const pwdHashLower = pwd ? hashPassword(pwd.toLowerCase()) : '';
     const objectId = await resolveUserCloudId(rawEmail, pwdHash);
 
     if (!objectId) {
@@ -2161,25 +2175,33 @@ async function handleSyncLogin(e) {
       return;
     }
 
-    currentEmail = rawEmail;
-    currentPasswordHash = pwdHash;
-    currentObjectId = objectId;
-    saveStoredAuth(rawEmail, pwdHash, objectId);
-
     const res = await cloudFetch(CLOUD_API_BASE + '/' + objectId + '?t=' + Date.now());
     if (res && res.ok) {
       const obj = await res.json();
       const cloudData = obj.data;
-      if (cloudData && cloudData.passwordHash && pwdHash && cloudData.passwordHash !== pwdHash) {
-        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta.', 'error');
-        return;
+      if (cloudData && cloudData.passwordHash) {
+        const expected = cloudData.passwordHash;
+        if (!pwdHash || (pwdHash !== expected && pwdHashLower !== expected)) {
+          showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta.', 'error');
+          return;
+        }
       }
+
+      currentEmail = rawEmail;
+      currentPasswordHash = (cloudData && cloudData.passwordHash) || pwdHash;
+      currentObjectId = objectId;
+      saveStoredAuth(rawEmail, currentPasswordHash, objectId);
+
       if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
         applyCloudData(cloudData);
       } else {
         loadStateFromStorage();
       }
     } else {
+      currentEmail = rawEmail;
+      currentPasswordHash = pwdHash;
+      currentObjectId = objectId;
+      saveStoredAuth(rawEmail, pwdHash, objectId);
       loadStateFromStorage();
     }
 
