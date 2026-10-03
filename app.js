@@ -87,6 +87,38 @@ let localLastSyncTime = 0;
 let realtimePollInterval = null;
 let isSyncingIncoming = false;
 
+// Universal Cloud Fetch: Uses native Android OkHttp Bridge if inside Android APK, or window.fetch in Browser/Web
+async function cloudFetch(url, options = {}) {
+  if (window.AndroidBridge && typeof window.AndroidBridge.httpRequest === 'function') {
+    try {
+      const method = options.method || 'GET';
+      const headersJson = options.headers ? JSON.stringify(options.headers) : '{}';
+      const bodyStr = options.body || '';
+
+      const respRaw = window.AndroidBridge.httpRequest(url, method, headersJson, bodyStr);
+      if (respRaw) {
+        const parsed = JSON.parse(respRaw);
+        if (parsed && parsed.status && parsed.status >= 200 && parsed.status < 400) {
+          return {
+            ok: parsed.status >= 200 && parsed.status < 300,
+            status: parsed.status,
+            statusText: parsed.statusText,
+            json: async () => {
+              try { return JSON.parse(parsed.body); }
+              catch(e) { return {}; }
+            },
+            text: async () => parsed.body
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("AndroidBridge request failed, falling back to window.fetch:", err);
+    }
+  }
+
+  return fetch(url, options);
+}
+
 function normalizeUserEmail(rawEmail) {
   if (!rawEmail) return '';
   return String(rawEmail).trim().toLowerCase();
@@ -212,7 +244,7 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
   if (!norm) return '';
 
   try {
-    const regRes = await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
+    const regRes = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
     if (regRes.ok) {
       const regObj = await regRes.json();
       const regData = regObj.data || {};
@@ -223,7 +255,7 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
       }
 
       // Create new cloud storage object for user
-      const createRes = await fetch(CLOUD_API_BASE, {
+      const createRes = await cloudFetch(CLOUD_API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -246,7 +278,7 @@ async function resolveUserCloudId(rawEmail, pwdHash = '') {
         regData.users[norm] = newId;
         regData.updatedAt = Date.now();
 
-        await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
+        await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1103,32 +1135,48 @@ function applyRevisionToRange(revId) {
 /* ==========================================================
    MONTH REGISTRATION FORM & REACTIVE BIDIRECTIONAL MATH
    ========================================================== */
+function getPreviousPaymentForDate(year, month) {
+  if (!payments || payments.length === 0) return null;
+  const sorted = [...payments].sort((a, b) => ((Number(a.year) || 0) - (Number(b.year) || 0)) || ((Number(a.month) || 0) - (Number(b.month) || 0)));
+  const targetYear = Number(year) || 0;
+  const targetMonth = Number(month) || 0;
+  const prior = sorted.filter(p => {
+    const py = Number(p.year) || 0;
+    const pm = Number(p.month) || 0;
+    return py < targetYear || (py === targetYear && pm < targetMonth);
+  });
+  return prior.length > 0 ? prior[prior.length - 1] : sorted[sorted.length - 1];
+}
+
 function openModal() {
   safeSetText('modal-title-text', "Registrar Mes");
   safeSetVal('p-edit-id', '');
   const delBtn = document.getElementById('btn-delete-row');
   if (delBtn) delBtn.style.display = "none";
 
-  const latest = (payments && payments.length > 0) ? payments[payments.length - 1] : null;
-  let y = latest ? latest.year : (new Date()).getFullYear();
-  let m = latest ? latest.month + 1 : ((new Date()).getMonth() + 1);
+  const sorted = [...payments].sort((a, b) => ((Number(a.year) || 0) - (Number(b.year) || 0)) || ((Number(a.month) || 0) - (Number(b.month) || 0)));
+  const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+
+  let y = latest ? Number(latest.year) : (new Date()).getFullYear();
+  let m = latest ? Number(latest.month) + 1 : ((new Date()).getMonth() + 1);
   if (m > 12) { m = 1; y++; }
 
   safeSetVal('p-year', y);
   safeSetVal('p-month', m);
 
+  const prev = getPreviousPaymentForDate(y, m);
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    const revPct = rev && rev.pctOwner2 != null ? Number(rev.pctOwner2) : 50;
+    const revPct = rev && rev.pctOwner2 != null ? Number(rev.pctOwner2) : (Number(settings.coOwner1Percentage) || 50);
     badge.textContent = rev ? '📌 Periodo: ' + (rev.name || 'Periodo') + ' (' + revPct.toFixed(2) + '%)' : "📌 Periodo General";
   }
 
-  const fee = rev && rev.feeTotal != null ? Number(rev.feeTotal) : (latest ? Number(latest.totalFee || 0) : 0);
+  const fee = rev && rev.feeTotal != null ? Number(rev.feeTotal) : (prev ? Number(prev.totalFee || 0) : 0);
   const pct = rev && rev.pctOwner2 != null ? Number(rev.pctOwner2) : (Number(settings.coOwner1Percentage) || 50);
   const co1 = rev && rev.lauraFee != null ? Number(rev.lauraFee) : (fee * (pct / 100));
   const co2 = rev && rev.rakFee != null ? Number(rev.rakFee) : (fee - co1);
-  const int = rev && rev.intTotal != null ? Number(rev.intTotal) : (latest ? Number(latest.interest || 0) : 0);
+  const int = rev && rev.intTotal != null ? Number(rev.intTotal) : (prev ? Number(prev.interest || 0) : 0);
   const prin = rev && rev.prinTotal != null ? Number(rev.prinTotal) : Math.max(0, fee - int);
 
   safeSetVal('p-total-fee', fee > 0 ? fee.toFixed(2) : "0.00");
@@ -1138,13 +1186,14 @@ function openModal() {
   safeSetVal('p-interest', int > 0 ? int.toFixed(2) : "0.00");
   safeSetVal('p-principal', prin > 0 ? prin.toFixed(2) : "0.00");
 
-  safeSetVal('p-community', (latest ? Number(latest.community || 0) : 0).toFixed(2));
-  safeSetVal('p-electricity', (latest ? Number(latest.electricity || 0) : 0).toFixed(2));
-  safeSetVal('p-derramas', (latest ? Number(latest.derramas || 0) : 0).toFixed(2));
+  // Strictly carry over the exact values from the previous month (including 0.00 when the previous month was 0)
+  safeSetVal('p-community', (prev && prev.community !== undefined && prev.community !== null && prev.community !== '') ? Number(prev.community).toFixed(2) : "0.00");
+  safeSetVal('p-electricity', (prev && prev.electricity !== undefined && prev.electricity !== null && prev.electricity !== '') ? Number(prev.electricity).toFixed(2) : "0.00");
+  safeSetVal('p-derramas', (prev && prev.derramas !== undefined && prev.derramas !== null && prev.derramas !== '') ? Number(prev.derramas).toFixed(2) : "0.00");
   safeSetVal('p-insurance-ibi', "0.00");
   safeSetVal('p-other-extra', "0.00");
   safeSetVal('p-laura-extra-amort', "0.00");
-  safeSetVal('p-deposit', (latest ? Number(latest.deposit || 0) : 0).toFixed(2));
+  safeSetVal('p-deposit', (prev && prev.deposit !== undefined && prev.deposit !== null && prev.deposit !== '') ? Number(prev.deposit).toFixed(2) : "0.00");
   safeSetVal('p-notes', "");
 
   updateLiveModalSummary();
@@ -1184,13 +1233,13 @@ function openEditModal(id) {
   safeSetVal('p-interest', (p.interest || 0).toFixed(2));
   safeSetVal('p-principal', (p.principal || 0).toFixed(2));
 
-  safeSetVal('p-community', (p.community || 0).toFixed(2));
-  safeSetVal('p-electricity', (p.electricity || 0).toFixed(2));
-  safeSetVal('p-derramas', (p.derramas || 0).toFixed(2));
+  safeSetVal('p-community', (p.community != null ? Number(p.community) : 0).toFixed(2));
+  safeSetVal('p-electricity', (p.electricity != null ? Number(p.electricity) : 0).toFixed(2));
+  safeSetVal('p-derramas', (p.derramas != null ? Number(p.derramas) : 0).toFixed(2));
   safeSetVal('p-insurance-ibi', ((p.insurance || 0) + (p.ibi || 0)).toFixed(2));
   safeSetVal('p-other-extra', (p.otherExtra || 0).toFixed(2));
   safeSetVal('p-laura-extra-amort', (p.lauraExtraAmort || 0).toFixed(2));
-  safeSetVal('p-deposit', (p.deposit || 0).toFixed(2));
+  safeSetVal('p-deposit', (p.deposit != null ? Number(p.deposit) : 0).toFixed(2));
   safeSetVal('p-notes', p.notes || "");
 
   updateLiveModalSummary();
@@ -1219,13 +1268,36 @@ function onPaymentDateChange() {
   }
 
   const editId = safeGetVal('p-edit-id');
-  if (!editId && rev) {
-    safeSetVal('p-total-fee', (Number(rev.feeTotal) || 0).toFixed(2));
-    safeSetVal('p-laura-pct', (Number(rev.pctOwner2) || 0).toFixed(2));
-    safeSetVal('p-co1', (Number(rev.lauraFee) || 0).toFixed(2));
-    safeSetVal('p-co2', (Number(rev.rakFee) || 0).toFixed(2));
-    safeSetVal('p-interest', (Number(rev.intTotal) || 0).toFixed(2));
-    safeSetVal('p-principal', (Number(rev.prinTotal) || 0).toFixed(2));
+  if (!editId) {
+    const prev = getPreviousPaymentForDate(y, m);
+    if (rev) {
+      safeSetVal('p-total-fee', (Number(rev.feeTotal) || 0).toFixed(2));
+      safeSetVal('p-laura-pct', (Number(rev.pctOwner2) || 0).toFixed(2));
+      safeSetVal('p-co1', (Number(rev.lauraFee) || 0).toFixed(2));
+      safeSetVal('p-co2', (Number(rev.rakFee) || 0).toFixed(2));
+      safeSetVal('p-interest', (Number(rev.intTotal) || 0).toFixed(2));
+      safeSetVal('p-principal', (Number(rev.prinTotal) || 0).toFixed(2));
+    } else if (prev) {
+      const fee = Number(prev.totalFee) || 0;
+      const pct = Number(settings.coOwner1Percentage) || 50;
+      const co1 = fee * (pct / 100);
+      const co2 = Math.max(0, fee - co1);
+      const int = Number(prev.interest) || 0;
+      const prin = Math.max(0, fee - int);
+      safeSetVal('p-total-fee', fee.toFixed(2));
+      safeSetVal('p-laura-pct', pct.toFixed(2));
+      safeSetVal('p-co1', co1.toFixed(2));
+      safeSetVal('p-co2', co2.toFixed(2));
+      safeSetVal('p-interest', int.toFixed(2));
+      safeSetVal('p-principal', prin.toFixed(2));
+    }
+
+    if (prev) {
+      safeSetVal('p-community', (prev.community !== undefined && prev.community !== null && prev.community !== '') ? Number(prev.community).toFixed(2) : "0.00");
+      safeSetVal('p-electricity', (prev.electricity !== undefined && prev.electricity !== null && prev.electricity !== '') ? Number(prev.electricity).toFixed(2) : "0.00");
+      safeSetVal('p-derramas', (prev.derramas !== undefined && prev.derramas !== null && prev.derramas !== '') ? Number(prev.derramas).toFixed(2) : "0.00");
+      safeSetVal('p-deposit', (prev.deposit !== undefined && prev.deposit !== null && prev.deposit !== '') ? Number(prev.deposit).toFixed(2) : "0.00");
+    }
     updateLiveModalSummary();
   }
 }
@@ -1790,7 +1862,7 @@ async function initCloudSync() {
 
   let cloudApplied = false;
   try {
-    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
     if (res.ok) {
       const obj = await res.json();
       const cloudData = obj.data;
@@ -1874,7 +1946,7 @@ async function syncToCloud() {
   };
 
   try {
-    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId, {
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1902,7 +1974,7 @@ function startRealtimePoller() {
     if (!currentEmail || !currentObjectId) return;
 
     try {
-      const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
+      const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
       if (res.ok) {
         const obj = await res.json();
         const data = obj.data;
@@ -1935,7 +2007,7 @@ async function triggerManualSync() {
 
   let success = false;
   try {
-    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
     if (res.ok) {
       const obj = await res.json();
       const cloudData = obj.data;
@@ -2014,7 +2086,7 @@ async function handleSyncLogin(e) {
     currentObjectId = objectId;
     saveStoredAuth(rawEmail, pwdHash, objectId);
 
-    const res = await fetch(CLOUD_API_BASE + '/' + objectId + '?t=' + Date.now());
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + objectId + '?t=' + Date.now());
     if (res.ok) {
       const obj = await res.json();
       const cloudData = obj.data;
@@ -2141,16 +2213,16 @@ async function handleDeleteAccount(e) {
 
   try {
     if (currentObjectId) {
-      await fetch(CLOUD_API_BASE + '/' + currentObjectId, { method: 'DELETE' }).catch(() => {});
+      await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId, { method: 'DELETE' }).catch(() => {});
 
-      const regRes = await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
+      const regRes = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
       if (regRes.ok) {
         const regObj = await regRes.json();
         const regData = regObj.data || {};
         if (regData.users && regData.users[currentEmail]) {
           delete regData.users[currentEmail];
           regData.updatedAt = Date.now();
-          await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
+          await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
