@@ -1756,7 +1756,7 @@ let lastCloudTimestampText = '';
 
 function scheduleCloudSync(delayMs = 150) {
   if (isSyncingIncoming) return;
-  if (!currentEmail || !currentBinId) return;
+  if (!currentEmail) return;
   if (cloudSyncTimeout) clearTimeout(cloudSyncTimeout);
   cloudSyncTimeout = setTimeout(() => {
     syncToCloud();
@@ -1852,36 +1852,49 @@ async function initCloudSync() {
 
   if (!currentObjectId) {
     currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
-    saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
+    if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
   }
 
   if (!currentObjectId) {
-    updateSyncUI('Conectado', '#10b981');
+    updateSyncUI('● En Tiempo Real', '#10b981');
     return;
   }
 
   let cloudApplied = false;
   try {
     const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
-    if (res.ok) {
+    if (res && res.ok) {
       const obj = await res.json();
       const cloudData = obj.data;
       const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
-      if (cloudData && cloudData.updatedAt && (Array.isArray(cloudData.payments) || cloudData.settings)) {
-        if (cloudData.updatedAt > localTime) {
+      if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
+        const cloudTime = cloudData.updatedAt || 0;
+        const localHasData = (payments && payments.length > 0) || (revisions && revisions.length > 0);
+        const cloudHasData = (cloudData.payments && cloudData.payments.length > 0) || (cloudData.revisions && cloudData.revisions.length > 0);
+
+        if (cloudTime > localTime) {
           applyCloudData(cloudData);
           cloudApplied = true;
-        } else if (localTime > cloudData.updatedAt) {
+        } else if (localTime > cloudTime) {
+          await syncToCloud();
+          cloudApplied = true;
+        } else if (cloudHasData && !localHasData) {
+          applyCloudData(cloudData);
+          cloudApplied = true;
+        } else if (localHasData && !cloudHasData) {
           await syncToCloud();
           cloudApplied = true;
         } else {
+          applyCloudData(cloudData);
           cloudApplied = true;
         }
       }
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn("Init cloud sync fetch notice:", err);
+  }
 
-  if (!cloudApplied) {
+  if (!cloudApplied && ((payments && payments.length > 0) || (revisions && revisions.length > 0))) {
     await syncToCloud();
   }
 
@@ -1926,7 +1939,13 @@ function applyCloudData(data) {
 
 async function syncToCloud() {
   if (isSyncingIncoming) return;
-  if (!currentEmail || !currentObjectId) return;
+  if (!currentEmail) return;
+
+  if (!currentObjectId) {
+    currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
+    if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
+  }
+  if (!currentObjectId) return;
 
   const now = Date.now();
   localLastSyncTime = now;
@@ -1954,7 +1973,7 @@ async function syncToCloud() {
         data: payload
       })
     });
-    if (res.ok) {
+    if (res && res.ok) {
       updateSyncUI('● En Tiempo Real', '#10b981');
     }
   } catch (err) {
@@ -1967,20 +1986,26 @@ function startRealtimePoller() {
     clearInterval(realtimePollInterval);
     realtimePollInterval = null;
   }
-  if (!currentEmail || !currentObjectId) return;
+  if (!currentEmail) return;
 
   realtimePollInterval = setInterval(async () => {
     if (isSyncingIncoming) return;
-    if (!currentEmail || !currentObjectId) return;
+    if (!currentEmail) return;
+
+    if (!currentObjectId) {
+      currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
+      if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
+    }
+    if (!currentObjectId) return;
 
     try {
       const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
-      if (res.ok) {
+      if (res && res.ok) {
         const obj = await res.json();
         const data = obj.data;
         const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
-        if (data && data.updatedAt && data.updatedAt > (localTime + 500)) {
-          if (Array.isArray(data.payments) || data.settings) {
+        if (data && data.updatedAt && data.updatedAt > (localTime + 300)) {
+          if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
             applyCloudData(data);
           }
         }
@@ -2002,26 +2027,35 @@ async function triggerManualSync() {
 
   if (!currentObjectId) {
     currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
-    saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
+    if (currentObjectId) saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
   }
 
   let success = false;
   try {
-    const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
-    if (res.ok) {
-      const obj = await res.json();
-      const cloudData = obj.data;
-      const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
-      if (cloudData && cloudData.updatedAt && cloudData.updatedAt > localTime && (Array.isArray(cloudData.payments) || cloudData.settings)) {
-        applyCloudData(cloudData);
-        showToast('Sincronizado desde la nube (' + payments.length + ' meses)');
-      } else {
-        await syncToCloud();
-        showToast('Sincronizados ' + payments.length + ' meses en la nube');
+    if (currentObjectId) {
+      const res = await cloudFetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
+      if (res && res.ok) {
+        const obj = await res.json();
+        const cloudData = obj.data;
+        const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
+        const cloudTime = (cloudData && cloudData.updatedAt) || 0;
+
+        const localHasData = (payments && payments.length > 0) || (revisions && revisions.length > 0);
+        const cloudHasData = cloudData && ((cloudData.payments && cloudData.payments.length > 0) || (cloudData.revisions && cloudData.revisions.length > 0));
+
+        if (cloudTime > localTime || (cloudHasData && !localHasData)) {
+          applyCloudData(cloudData);
+          showToast('Sincronizado desde la nube (' + payments.length + ' meses)');
+        } else {
+          await syncToCloud();
+          showToast('Sincronizados ' + payments.length + ' meses en la nube');
+        }
+        success = true;
       }
-      success = true;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn("Manual sync error:", e);
+  }
 
   if (!success) {
     await syncToCloud();
