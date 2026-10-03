@@ -39,6 +39,25 @@ function safeSetVal(id, val) {
   if (el) el.value = val !== undefined && val !== null ? String(val) : '';
 }
 
+
+let toastTimeout = null;
+function showToast(msg) {
+  try {
+    const banner = document.getElementById('toast-banner');
+    const textEl = document.getElementById('toast-text');
+    if (textEl) textEl.textContent = msg;
+    if (banner) {
+      banner.classList.add('show');
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        banner.classList.remove('show');
+      }, 3000);
+    }
+  } catch (e) {
+    console.log('Toast:', msg);
+  }
+}
+
 function safeGetVal(id) {
   const el = document.getElementById(id);
   return el ? (el.value || '').trim() : '';
@@ -318,16 +337,8 @@ window.addEventListener('firebase-sync-ready', () => {
 
 function loadStateFromStorage() {
   try {
-    if (!currentEmail) {
-      settings = getDefaultZeroSettings();
-      revisions = [];
-      payments = [];
-      recomputeBalances();
-      return;
-    }
-
-    const userKey = 'hipoteca_user_' + currentEmail;
-    const val = localStorage.getItem(userKey);
+    const key = currentEmail ? ('hipoteca_user_' + currentEmail) : 'hipoteca_local_data';
+    const val = localStorage.getItem(key);
     if (val) {
       const parsed = JSON.parse(val);
       if (parsed) {
@@ -352,29 +363,35 @@ function saveStateToStorage() {
   const now = Date.now();
   localLastSyncTime = now;
   try {
+    const dataToSave = {
+      account: currentEmail || 'local',
+      settings,
+      revisions,
+      payments,
+      updatedAt: now
+    };
     if (currentEmail) {
       const userKey = 'hipoteca_user_' + currentEmail;
-      localStorage.setItem(userKey, JSON.stringify({
-        account: currentEmail,
-        settings,
-        revisions,
-        payments,
-        updatedAt: now
-      }));
-      localStorage.setItem('hipoteca_last_updated_time', String(now));
+      localStorage.setItem(userKey, JSON.stringify(dataToSave));
+    } else {
+      localStorage.setItem('hipoteca_local_data', JSON.stringify(dataToSave));
     }
-  } catch (err) {}
-  scheduleCloudSync();
+    localStorage.setItem('hipoteca_last_updated_time', String(now));
+  } catch (err) {
+    console.warn('Storage save notice:', err);
+  }
+  if (currentEmail) {
+    scheduleCloudSync();
+  }
 }
-
 
 function recomputeBalances() {
   payments.sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
   let bal = Number(settings.initialCapital) || 0;
-  let capOwner2 = (settings.internalDebtOwner2 && Number(settings.internalDebtOwner2) >= 40000)
+  let capOwner2 = (settings.internalDebtOwner2 && Number(settings.internalDebtOwner2) > 0)
     ? Number(settings.internalDebtOwner2)
-    : 0;
+    : (bal * ((Number(settings.coOwner1Percentage) || 50) / 100));
 
   let accBal = 0;
   let totOwner2Discount = 0;
@@ -553,17 +570,17 @@ function updateDashboardUI() {
     if (revBadgeEl) revBadgeEl.style.display = 'inline-block';
 
     const latestRev = revisions[revisions.length - 1];
-    const sMonth = MONTH_LABELS[(latestRev.startMonth - 1) % 12] || '';
-    const eMonth = MONTH_LABELS[(latestRev.endMonth - 1) % 12] || '';
+    const sMonth = MONTH_LABELS[((Number(latestRev.startMonth) || 1) - 1) % 12] || '';
+    const sYear = latestRev.startYear || '';
 
     if (document.getElementById('dashboard-rev-period')) {
-      document.getElementById('dashboard-rev-period').textContent = 'Revisión #' + revisions.length + ' (' + sMonth + ' ' + latestRev.startYear + ' - ' + eMonth + ' ' + latestRev.endYear + ')';
+      document.getElementById('dashboard-rev-period').textContent = 'Revisión #' + revisions.length + ' (' + sMonth + ' ' + sYear + ' - ' + (latestRev.name || 'Vigente') + ')';
     }
     if (document.getElementById('dashboard-rev-note')) {
-      document.getElementById('dashboard-rev-note').textContent = latestRev.note || 'Periodo vigente de liquidación bancaria';
+      document.getElementById('dashboard-rev-note').textContent = latestRev.note || latestRev.name || 'Periodo vigente de liquidación bancaria';
     }
     if (document.getElementById('dashboard-rev-rate')) {
-      document.getElementById('dashboard-rev-rate').textContent = (latestRev.annualRate || 0).toFixed(2).replace('.', ',') + '%';
+      document.getElementById('dashboard-rev-rate').textContent = (Number(latestRev.annualRate) || Number(settings.annualInterestRate) || 0).toFixed(2).replace('.', ',') + '%';
     }
     if (document.getElementById('dashboard-rev-fee-total')) {
       document.getElementById('dashboard-rev-fee-total').textContent = fmt(latestRev.feeTotal);
@@ -575,7 +592,7 @@ function updateDashboardUI() {
       document.getElementById('dashboard-rev-fee-co2').textContent = fmt(latestRev.rakFee);
     }
     if (document.getElementById('dashboard-rev-pct-co2')) {
-      const p2 = latestRev.pctOwner1 !== undefined ? latestRev.pctOwner1 : (100 - (latestRev.pctOwner2 || 50));
+      const p2 = latestRev.pctOwner1 !== undefined ? latestRev.pctOwner1 : (100 - (Number(latestRev.pctOwner2) || 50));
       document.getElementById('dashboard-rev-pct-co2').textContent = Number(p2).toFixed(2).replace('.', ',') + '%';
     }
     if (document.getElementById('dashboard-rev-fee-co1')) {
@@ -615,8 +632,16 @@ function switchTab(tabId) {
    CANVAS CHART DRAWING
    ========================================================== */
 function drawFinancialCharts() {
-  drawEvolutionChart();
-  drawReceiptBreakdownChart();
+  try {
+    drawEvolutionChart();
+  } catch (e) {
+    console.warn('drawEvolutionChart warning:', e);
+  }
+  try {
+    drawReceiptBreakdownChart();
+  } catch (e) {
+    console.warn('drawReceiptBreakdownChart warning:', e);
+  }
 }
 
 function drawEvolutionChart() {
@@ -750,7 +775,8 @@ function drawReceiptBreakdownChart() {
     ctx.fillStyle = '#64748b';
     ctx.font = '9px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(MONTH_LABELS[p.month - 1].substring(0, 3), xCenter, baseLine + 14);
+    const mName = MONTH_LABELS[((Number(p.month) || 1) - 1) % 12] || ('M' + p.month);
+    ctx.fillText(mName.substring(0, 3), xCenter, baseLine + 14);
   });
 }
 
@@ -778,7 +804,7 @@ function renderHistoryTable() {
   let list = payments.filter(p => {
     const hypKey = getMortgageYearKey(p.year, p.month);
     const matchYear = (yr === 'ALL') || (yr === hypKey) || (p.year.toString() === yr);
-    const mName = MONTH_LABELS[p.month - 1].toLowerCase();
+    const mName = (MONTH_LABELS[p.month - 1] || '').toLowerCase();
     const matchQ = !query ||
       mName.includes(query) ||
       p.year.toString().includes(query) ||
@@ -800,7 +826,7 @@ function renderHistoryTable() {
     const accColor = p.accBalance >= 0 ? 'var(--primary)' : 'var(--red)';
     tr.innerHTML = `
       <td>
-        <strong>${MONTH_LABELS[p.month - 1]}</strong>
+        <strong>${MONTH_LABELS[p.month - 1] || ('Mes ' + p.month)}</strong>
         <span style="color: var(--text-muted); font-size: 11px;"> ${p.year}</span>
         ${p.extra > 0 ? `<span class="badge-pill" style="font-size: 9px; padding: 1px 5px; margin-left: 4px;">EXTRA</span>` : ''}
       </td>
@@ -835,7 +861,7 @@ function renderRevisionsTable() {
   const tbody = document.getElementById('revisions-table-body');
   if (!tbody) return;
 
-  const sorted = [...revisions].sort((a, b) => (b.startYear - a.startYear) || (b.startMonth - a.startMonth));
+  const sorted = [...revisions].sort((a, b) => ((Number(b.startYear) || 0) - (Number(a.startYear) || 0)) || ((Number(b.startMonth) || 0) - (Number(a.startMonth) || 0)));
   tbody.innerHTML = '';
 
   if (sorted.length === 0) {
@@ -845,12 +871,15 @@ function renderRevisionsTable() {
 
   sorted.forEach(r => {
     const tr = document.createElement('tr');
+    const mName = MONTH_LABELS[((Number(r.startMonth) || 1) - 1) % 12] || ('Mes ' + r.startMonth);
+    const yr = r.startYear || '';
+    const pct = Number(r.pctOwner2) || 0;
     tr.innerHTML = `
-      <td><strong>${MONTH_LABELS[r.startMonth - 1]} ${r.startYear}</strong></td>
-      <td style="font-weight: 700; color: #fff;">${r.name}</td>
+      <td><strong>${mName} ${yr}</strong></td>
+      <td style="font-weight: 700; color: #fff;">${r.name || 'Revisión'}</td>
       <td>${fmt(r.capTotal)}</td>
       <td style="color: var(--primary); font-weight: 700;">${fmt(r.capOwner2)}</td>
-      <td style="color: var(--primary); font-weight: 800;">${r.pctOwner2.toFixed(2)}%</td>
+      <td style="color: var(--primary); font-weight: 800;">${pct.toFixed(2)}%</td>
       <td style="font-weight: 700; color: #fff;">${fmt(r.feeTotal)}</td>
       <td style="color: var(--primary); font-weight: 700;">${fmt(r.lauraFee)}</td>
       <td style="color: var(--purple); font-weight: 700;">${fmt(r.rakFee)}</td>
@@ -874,24 +903,30 @@ function openRevisionModal(id = null) {
   safeSetText('rev-modal-title', id ? "Editar Periodo" : "Añadir Periodo");
 
   if (id) {
-    const r = revisions.find(x => x.id === id);
+    const r = revisions.find(x => x.id == id);
     if (r) {
-      safeSetVal('rev-name', r.name);
-      safeSetVal('rev-start-year', r.startYear);
-      safeSetVal('rev-start-month', r.startMonth);
-      safeSetVal('rev-cap-total', r.capTotal);
-      safeSetVal('rev-cap-laura', r.capOwner2);
-      safeSetVal('rev-pct-laura', r.pctOwner2);
-      safeSetVal('rev-fee-total', r.feeTotal);
-      safeSetVal('rev-int-total', r.intTotal);
+      safeSetVal('rev-name', r.name || 'Revisión');
+      safeSetVal('rev-start-year', r.startYear || (new Date()).getFullYear());
+      safeSetVal('rev-start-month', r.startMonth || ((new Date()).getMonth() + 1));
+      safeSetVal('rev-cap-total', (Number(r.capTotal) || 0).toFixed(2));
+      safeSetVal('rev-cap-laura', (Number(r.capOwner2) || 0).toFixed(2));
+      safeSetVal('rev-pct-laura', (Number(r.pctOwner2) || (Number(settings.coOwner1Percentage) || 50)).toFixed(2));
+      safeSetVal('rev-fee-total', (Number(r.feeTotal) || 0).toFixed(2));
+      safeSetVal('rev-int-total', (Number(r.intTotal) || 0).toFixed(2));
     }
   } else {
+    const initCap = Number(settings.initialCapital) || 0;
+    const initPctL = Number(settings.coOwner1Percentage) || 50;
+    const initDebtL = (settings.internalDebtOwner2 && Number(settings.internalDebtOwner2) > 0)
+      ? Number(settings.internalDebtOwner2)
+      : (initCap * (initPctL / 100));
+
     safeSetVal('rev-name', "Revisión " + MONTH_LABELS[(new Date()).getMonth()] + " " + (new Date()).getFullYear());
     safeSetVal('rev-start-year', (new Date()).getFullYear());
     safeSetVal('rev-start-month', (new Date()).getMonth() + 1);
-    safeSetVal('rev-cap-total', (settings.initialCapital || 0).toFixed(2));
-    safeSetVal('rev-cap-laura', ((settings.initialCapital || 0) * ((settings.coOwner1Percentage || 50)/100)).toFixed(2));
-    safeSetVal('rev-pct-laura', (settings.coOwner1Percentage || 50).toFixed(2));
+    safeSetVal('rev-cap-total', initCap.toFixed(2));
+    safeSetVal('rev-cap-laura', initDebtL.toFixed(2));
+    safeSetVal('rev-pct-laura', initPctL.toFixed(2));
     safeSetVal('rev-fee-total', "0.00");
     safeSetVal('rev-int-total', "0.00");
   }
@@ -914,7 +949,7 @@ function closeRevisionModal() {
 
 function onRevisionCapTotalChange() {
   const capTot = Number(safeGetVal('rev-cap-total')) || 0;
-  const pctL = Number(safeGetVal('rev-pct-laura')) || (settings.coOwner1Percentage || 50);
+  const pctL = Number(safeGetVal('rev-pct-laura')) || (Number(settings.coOwner1Percentage) || 50);
   if (capTot > 0) {
     safeSetVal('rev-cap-laura', (capTot * (pctL / 100)).toFixed(2));
   }
@@ -953,9 +988,9 @@ function onRevisionInterestChange() {
 }
 
 function updateRevisionCalculatedBox() {
-  const fee = Number(document.getElementById('rev-fee-total').value) || 0;
-  const int = Number(document.getElementById('rev-int-total').value) || 0;
-  const pctL = Number(document.getElementById('rev-pct-laura').value) || 32.27;
+  const fee = Number(safeGetVal('rev-fee-total')) || 0;
+  const int = Number(safeGetVal('rev-int-total')) || 0;
+  const pctL = Number(safeGetVal('rev-pct-laura')) || (Number(settings.coOwner1Percentage) || 50);
 
   const lauraFee = fee * (pctL / 100);
   const rakFee = Math.max(0, fee - lauraFee);
@@ -963,67 +998,77 @@ function updateRevisionCalculatedBox() {
   const prin = Math.max(0, fee - int);
   const lauraPrin = prin * (pctL / 100);
 
-  if (document.getElementById('rev-prev-laura-fee')) document.getElementById('rev-prev-laura-fee').textContent = fmt(lauraFee);
-  if (document.getElementById('rev-prev-rak-fee')) document.getElementById('rev-prev-rak-fee').textContent = fmt(rakFee);
-  if (document.getElementById('rev-prev-laura-int')) document.getElementById('rev-prev-laura-int').textContent = fmt(lauraInt);
-  if (document.getElementById('rev-prev-laura-prin')) document.getElementById('rev-prev-laura-prin').textContent = fmt(lauraPrin);
+  safeSetText('rev-prev-laura-fee', fmt(lauraFee));
+  safeSetText('rev-prev-rak-fee', fmt(rakFee));
+  safeSetText('rev-prev-laura-int', fmt(lauraInt));
+  safeSetText('rev-prev-laura-prin', fmt(lauraPrin));
 }
 
 function submitRevisionHandler(e) {
-  e.preventDefault();
-  const editId = document.getElementById('rev-edit-id').value;
-  const name = document.getElementById('rev-name').value || "Revisión";
-  const y = Number(document.getElementById('rev-start-year').value);
-  const m = Number(document.getElementById('rev-start-month').value);
-  const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const capL = Number(document.getElementById('rev-cap-laura').value) || 0;
-  const pctL = Number(document.getElementById('rev-pct-laura').value) || 32.27;
-  const fee = Number(document.getElementById('rev-fee-total').value) || 0;
-  const int = Number(document.getElementById('rev-int-total').value) || 0;
-  const prin = Math.max(0, fee - int);
+  if (e && e.preventDefault) e.preventDefault();
+  try {
+    const editId = safeGetVal('rev-edit-id');
+    const name = safeGetVal('rev-name') || "Revisión";
+    const y = Number(safeGetVal('rev-start-year')) || (new Date()).getFullYear();
+    const m = Number(safeGetVal('rev-start-month')) || ((new Date()).getMonth() + 1);
+    const capTot = Number(safeGetVal('rev-cap-total')) || 0;
+    const capL = Number(safeGetVal('rev-cap-laura')) || 0;
+    const pctL = Number(safeGetVal('rev-pct-laura')) || (Number(settings.coOwner1Percentage) || 50);
+    const fee = Number(safeGetVal('rev-fee-total')) || 0;
+    const int = Number(safeGetVal('rev-int-total')) || 0;
+    const prin = Math.max(0, fee - int);
+    const lauraFee = fee * (pctL / 100);
+    const rakFee = Math.max(0, fee - lauraFee);
+    const lauraInt = int * (pctL / 100);
+    const lauraPrin = prin * (pctL / 100);
 
-  const lauraFee = fee * (pctL / 100);
-  const rakFee = Math.max(0, fee - lauraFee);
-  const lauraInt = int * (pctL / 100);
-  const lauraPrin = prin * (pctL / 100);
+    const revObj = {
+      id: editId ? Number(editId) : Date.now(),
+      name,
+      startYear: y,
+      startMonth: m,
+      capTotal: capTot,
+      capOwner2: capL,
+      pctOwner2: pctL,
+      feeTotal: fee,
+      intTotal: int,
+      prinTotal: prin,
+      lauraFee,
+      rakFee,
+      lauraInt,
+      lauraPrin
+    };
 
-  const revObj = {
-    id: editId ? Number(editId) : Date.now(),
-    name,
-    startYear: y,
-    startMonth: m,
-    capTotal: capTot,
-    capOwner2: capL,
-    pctOwner2: pctL,
-    feeTotal: fee,
-    intTotal: int,
-    prinTotal: prin,
-    lauraFee,
-    rakFee,
-    lauraInt,
-    lauraPrin
-  };
+    if (editId) {
+      const idx = revisions.findIndex(x => x.id == editId);
+      if (idx !== -1) revisions[idx] = revObj;
+      else revisions.push(revObj);
+      showToast("Periodo actualizado");
+    } else {
+      revisions.push(revObj);
+      showToast("Periodo añadido");
+    }
 
-  if (editId) {
-    const idx = revisions.findIndex(x => x.id == editId);
-    if (idx !== -1) revisions[idx] = revObj;
-    showToast("Periodo actualizado");
-  } else {
-    revisions.push(revObj);
-    showToast("Periodo añadido");
+    recomputeBalances();
+    saveStateToStorage();
+    closeRevisionModal();
+    updateDashboardUI();
+  } catch (err) {
+    console.error('Error guardando periodo de revisión:', err);
+    closeRevisionModal();
+    updateDashboardUI();
+    showToast('Error al guardar periodo: ' + err.message);
   }
-
-  saveStateToStorage();
-  closeRevisionModal();
-  updateDashboardUI();
+  return false;
 }
 
 function deleteCurrentRevision() {
-  const editId = document.getElementById('rev-edit-id').value;
+  const editId = safeGetVal('rev-edit-id');
   if (!editId) return;
 
   if (confirm("¿Estás seguro de eliminar este periodo de revisión?")) {
     revisions = revisions.filter(x => x.id != editId);
+    recomputeBalances();
     saveStateToStorage();
     closeRevisionModal();
     updateDashboardUI();
@@ -1165,22 +1210,22 @@ function closeModal() {
 }
 
 function onPaymentDateChange() {
-  const y = Number(document.getElementById('p-year').value);
-  const m = Number(document.getElementById('p-month').value);
+  const y = Number(safeGetVal('p-year')) || (new Date()).getFullYear();
+  const m = Number(safeGetVal('p-month')) || ((new Date()).getMonth() + 1);
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? `📌 Periodo detectado: ${rev.name} (${rev.pctOwner2.toFixed(2)}%)` : "📌 Periodo General";
+    badge.textContent = rev ? `📌 Periodo detectado: ${rev.name || 'Revisión'} (${(Number(rev.pctOwner2) || 0).toFixed(2)}%)` : "📌 Periodo General";
   }
 
   const editId = safeGetVal('p-edit-id');
   if (!editId && rev) {
-    safeSetVal('p-total-fee', rev.feeTotal.toFixed(2));
-    safeSetVal('p-laura-pct', rev.pctOwner2.toFixed(2));
-    safeSetVal('p-co1', rev.lauraFee.toFixed(2));
-    safeSetVal('p-co2', rev.rakFee.toFixed(2));
-    safeSetVal('p-interest', rev.intTotal.toFixed(2));
-    safeSetVal('p-principal', rev.prinTotal.toFixed(2));
+    safeSetVal('p-total-fee', (Number(rev.feeTotal) || 0).toFixed(2));
+    safeSetVal('p-laura-pct', (Number(rev.pctOwner2) || 0).toFixed(2));
+    safeSetVal('p-co1', (Number(rev.lauraFee) || 0).toFixed(2));
+    safeSetVal('p-co2', (Number(rev.rakFee) || 0).toFixed(2));
+    safeSetVal('p-interest', (Number(rev.intTotal) || 0).toFixed(2));
+    safeSetVal('p-principal', (Number(rev.prinTotal) || 0).toFixed(2));
     updateLiveModalSummary();
   }
 }
@@ -1282,24 +1327,23 @@ function updateLiveModalSummary() {
 }
 
 function submitPaymentHandler(e) {
-  e.preventDefault();
-  const editId = document.getElementById('p-edit-id').value;
-
-  const y = Number(document.getElementById('p-year').value);
-  const m = Number(document.getElementById('p-month').value);
-  const fee = Number(document.getElementById('p-total-fee').value) || 513.81;
-  const co1 = Number(document.getElementById('p-co1').value) || (fee * ((settings.coOwner1Percentage || 32.27) / 100));
-  const co2 = Number(document.getElementById('p-co2').value) || Math.max(0, fee - co1);
-  const int = Number(document.getElementById('p-interest').value) || 0;
-  const prin = Number(document.getElementById('p-principal').value) || 0;
-  const com = Number(document.getElementById('p-community').value) || 0;
-  const luz = Number(document.getElementById('p-electricity').value) || 0;
-  const derr = Number(document.getElementById('p-derramas').value) || 0;
-  const insIbi = Number(document.getElementById('p-insurance-ibi').value) || 0;
-  const other = Number(document.getElementById('p-other-extra').value) || 0;
-  const lExtraAmort = Number(document.getElementById('p-laura-extra-amort').value) || 0;
-  const dep = Number(document.getElementById('p-deposit').value) || 0;
-  const notes = document.getElementById('p-notes').value || "";
+  if (e && e.preventDefault) e.preventDefault();
+  const editId = safeGetVal('p-edit-id');
+  const y = Number(safeGetVal('p-year')) || (new Date()).getFullYear();
+  const m = Number(safeGetVal('p-month')) || ((new Date()).getMonth() + 1);
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const co1 = Number(safeGetVal('p-co1')) || (fee * ((Number(settings.coOwner1Percentage) || 50) / 100));
+  const co2 = Number(safeGetVal('p-co2')) || Math.max(0, fee - co1);
+  const int = Number(safeGetVal('p-interest')) || 0;
+  const prin = Number(safeGetVal('p-principal')) || Math.max(0, fee - int);
+  const com = Number(safeGetVal('p-community')) || 0;
+  const luz = Number(safeGetVal('p-electricity')) || 0;
+  const derr = Number(safeGetVal('p-derramas')) || 0;
+  const insIbi = Number(safeGetVal('p-insurance-ibi')) || 0;
+  const other = Number(safeGetVal('p-other-extra')) || 0;
+  const lExtraAmort = Number(safeGetVal('p-laura-extra-amort')) || 0;
+  const dep = Number(safeGetVal('p-deposit')) || 0;
+  const notes = safeGetVal('p-notes');
 
   const paymentObj = {
     id: editId ? Number(editId) : Date.now(),
@@ -1326,9 +1370,9 @@ function submitPaymentHandler(e) {
   if (editId) {
     const idx = payments.findIndex(x => x.id == editId);
     if (idx !== -1) payments[idx] = paymentObj;
+    else payments.push(paymentObj);
     showToast("Mes actualizado");
   } else {
-    // Check if month already exists
     const existingIdx = payments.findIndex(x => x.year === y && x.month === m);
     if (existingIdx !== -1) {
       payments[existingIdx] = paymentObj;
@@ -1346,7 +1390,7 @@ function submitPaymentHandler(e) {
 }
 
 function deleteCurrentRow() {
-  const editId = document.getElementById('p-edit-id').value;
+  const editId = safeGetVal('p-edit-id');
   if (!editId) return;
 
   if (confirm("¿Estás seguro de eliminar este registro mensual?")) {
@@ -1397,39 +1441,33 @@ function syncSettingsDebts() {
 }
 
 function onAgreementCapitalChange(source) {
-  const totInput = document.getElementById('agree-init-capital');
-  const lauraInput = document.getElementById('agree-debt-laura');
-  const rakInput = document.getElementById('agree-debt-rak');
-  const pctLInput = document.getElementById('agree-pct-laura');
-  const pctRInput = document.getElementById('agree-pct-rak');
-
-  let tot = Number(totInput?.value) || 0;
-  let lCap = Number(lauraInput?.value) || 0;
-  let rCap = Number(rakInput?.value) || 0;
+  let tot = Number(safeGetVal('agree-init-capital')) || 0;
+  let lCap = Number(safeGetVal('agree-debt-laura')) || 0;
+  let rCap = Number(safeGetVal('agree-debt-rak')) || 0;
 
   if (source === 'laura') {
     if (tot > 0) {
       rCap = Math.max(0, tot - lCap);
-      if (rakInput) rakInput.value = rCap.toFixed(2);
+      safeSetVal('agree-debt-rak', rCap.toFixed(2));
     }
   } else if (source === 'rak') {
     if (tot > 0) {
       lCap = Math.max(0, tot - rCap);
-      if (lauraInput) lauraInput.value = lCap.toFixed(2);
+      safeSetVal('agree-debt-laura', lCap.toFixed(2));
     }
   } else if (source === 'total') {
-    const pctL = Number(pctLInput?.value) || 43.94;
+    const pctL = Number(safeGetVal('agree-pct-laura')) || 43.94;
     lCap = tot * (pctL / 100);
     rCap = Math.max(0, tot - lCap);
-    if (lauraInput) lauraInput.value = lCap.toFixed(2);
-    if (rakInput) rakInput.value = rCap.toFixed(2);
+    safeSetVal('agree-debt-laura', lCap.toFixed(2));
+    safeSetVal('agree-debt-rak', rCap.toFixed(2));
   }
 
   if (tot > 0) {
     const pctL = (lCap / tot) * 100;
     const pctR = 100 - pctL;
-    if (pctLInput) pctLInput.value = pctL.toFixed(2);
-    if (pctRInput) pctRInput.value = pctR.toFixed(2);
+    safeSetVal('agree-pct-laura', pctL.toFixed(2));
+    safeSetVal('agree-pct-rak', pctR.toFixed(2));
   }
 }
 
@@ -1471,58 +1509,53 @@ function closeAgreementModal() {
 
 function submitAgreementHandler(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const tot = Number(document.getElementById('agree-init-capital')?.value) || 0;
-  const lCap = Number(document.getElementById('agree-debt-laura')?.value) || 0;
-  const rCap = Number(document.getElementById('agree-debt-rak')?.value) || Math.max(0, tot - lCap);
-  const pctL = tot > 0 ? (lCap / tot) * 100 : 43.94;
-  const pctR = 100 - pctL;
+  try {
+    const tot = Number(safeGetVal('agree-init-capital')) || 0;
+    const lCap = Number(safeGetVal('agree-debt-laura')) || 0;
+    const rCap = Number(safeGetVal('agree-debt-rak')) || Math.max(0, tot - lCap);
+    const pctL = tot > 0 ? (lCap / tot) * 100 : 50.00;
+    const pctR = 100 - pctL;
 
-  settings.initialCapital = tot;
-  settings.internalDebtOwner2 = lCap;
-  settings.internalDebtOwner1 = rCap;
-  settings.coOwner1Percentage = pctL;
-  settings.coOwner2Percentage = pctR;
+    settings.initialCapital = tot;
+    settings.internalDebtOwner2 = lCap;
+    settings.internalDebtOwner1 = rCap;
+    settings.coOwner1Percentage = pctL;
+    settings.coOwner2Percentage = pctR;
 
-  // Also update initial revision if exists
-  const initialRev = revisions.find(r => r.startYear === 2020 && r.startMonth === 11) || revisions[0];
-  if (initialRev) {
-    initialRev.capTotal = tot;
-    initialRev.capOwner2 = lCap;
-    initialRev.pctOwner2 = pctL;
-    initialRev.lauraFee = initialRev.feeTotal * (pctL / 100);
-    initialRev.rakFee = Math.max(0, initialRev.feeTotal - initialRev.lauraFee);
-    initialRev.lauraPrin = initialRev.prinTotal * (pctL / 100);
+    recomputeBalances();
+    saveStateToStorage();
+    closeAgreementModal();
+    updateDashboardUI();
+    showToast(`Capital inicial guardado: ${fmt(lCap)} (2º Prop.) / ${fmt(tot)} (Total)`);
+  } catch (err) {
+    console.error('Error guardando reparto:', err);
+    closeAgreementModal();
+    updateDashboardUI();
   }
-
-  recomputeBalances();
-  saveStateToStorage();
-  closeAgreementModal();
-  updateDashboardUI();
-  showToast(`Capital inicial guardado: ${fmt(lCap)} (Owner2) / ${fmt(tot)} (Total)`);
+  return false;
 }
 
 function saveSettingsHandler(e) {
-  e.preventDefault();
-  settings.initialCapital = Number(document.getElementById('cfg-capital-init').value) || 0;
-  settings.totalTermYears = Number(document.getElementById('cfg-term-years').value) || 25;
-  settings.annualInterestRate = Number(document.getElementById('cfg-interest-rate').value) || 1.85;
-  settings.coOwner1Percentage = Number(document.getElementById('cfg-laura-pct').value) || 32.27;
-  settings.coOwner2Percentage = Number(document.getElementById('cfg-rak-pct').value) || 67.73;
-  settings.internalDebtOwner2 = Number(document.getElementById('cfg-debt-laura').value) || 0;
-  settings.internalDebtOwner1 = Number(document.getElementById('cfg-debt-rak').value) || 0;
+  if (e && e.preventDefault) e.preventDefault();
+  try {
+    settings.initialCapital = Number(safeGetVal('cfg-capital-init')) || 0;
+    settings.totalTermYears = Number(safeGetVal('cfg-term-years')) || 25;
+    settings.annualInterestRate = Number(safeGetVal('cfg-interest-rate')) || 2.50;
+    settings.coOwner1Percentage = Number(safeGetVal('cfg-laura-pct')) || 50.00;
+    settings.coOwner2Percentage = Number(safeGetVal('cfg-rak-pct')) || 50.00;
+    settings.internalDebtOwner2 = Number(safeGetVal('cfg-laura-debt') || safeGetVal('cfg-debt-laura')) || 0;
+    settings.internalDebtOwner1 = Number(safeGetVal('cfg-rak-debt') || safeGetVal('cfg-debt-rak')) || 0;
 
-  const newKey = document.getElementById('sync-user-id')?.value;
-  if (newKey && newKey !== currentEmail) {
-    currentEmail = newKey;
-    saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
+    recomputeBalances();
+    saveStateToStorage();
+    updateDashboardUI();
+    showToast("Ajustes guardados correctamente");
+  } catch (err) {
+    console.error('Error guardando ajustes:', err);
   }
-
-  recomputeBalances();
-  saveStateToStorage();
-  updateDashboardUI();
-  updateSyncUI();
-  showToast("Ajustes guardados y sincronizados");
+  return false;
 }
+
 
 function handleFilterChange() {
   renderHistoryTable();

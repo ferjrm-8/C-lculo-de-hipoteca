@@ -1357,7 +1357,7 @@
       <div class="sim-card">
         <h2 style="font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 12px;">Parámetros del Préstamo y Copropietarios</h2>
 
-        <form id="loan-settings-form" onsubmit="saveSettingsHandler(event)">
+        <form id="loan-settings-form" onsubmit="saveSettingsHandler(event); return false;">
           <div class="form-grid">
             <div class="form-field">
               <label>Capital Inicial Concedido (€):</label>
@@ -1477,7 +1477,7 @@
         <button onclick="closeModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
       </div>
 
-      <form id="payment-input-form" onsubmit="submitPaymentHandler(event)">
+      <form id="payment-input-form" onsubmit="submitPaymentHandler(event); return false;">
         <input type="hidden" id="p-edit-id">
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
@@ -1638,7 +1638,7 @@
         <button onclick="closeRevisionModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
       </div>
 
-      <form id="revision-form" onsubmit="submitRevisionHandler(event)">
+      <form id="revision-form" onsubmit="submitRevisionHandler(event); return false;">
         <input type="hidden" id="rev-edit-id">
 
         <div class="form-field" style="margin-bottom: 12px;">
@@ -1732,7 +1732,7 @@
         <button onclick="closeAgreementModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">✕</button>
       </div>
 
-      <form onsubmit="submitAgreementHandler(event)">
+      <form onsubmit="submitAgreementHandler(event); return false;">
         <div class="form-field" style="margin-bottom: 12px;">
           <label>Capital Inicial Total Hipoteca (€):</label>
           <input type="number" step="0.01" id="agree-init-capital" class="form-input" oninput="onAgreementCapitalChange('total')" style="font-weight: 800; color: #fff; font-size: 15px;" placeholder="121766.32" required>
