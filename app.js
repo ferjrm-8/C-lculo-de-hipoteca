@@ -77,16 +77,9 @@ window.addEventListener('click', (e) => {
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
-const PRIMARY_USER_ID = 'ff808181a09d98f701a100d8c5f16a0c';
 const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
 const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
-const BUILTIN_USERS = {
-  'ferjrm@hotmail.com': PRIMARY_USER_ID,
-  'fejrm@hotmail.com': PRIMARY_USER_ID,
-  'ferjrm@gmail.com': PRIMARY_USER_ID,
-  'ferjrm': PRIMARY_USER_ID,
-  'fejrm': PRIMARY_USER_ID
-};
+
 let currentObjectId = '';
 let currentEmail = '';
 let currentBinId = '';
@@ -138,11 +131,8 @@ async function cloudFetch(url, options = {}) {
 function normalizeUserEmail(rawEmail) {
   if (!rawEmail) return '';
   let s = String(rawEmail).trim().toLowerCase();
-  if (s === 'ferjrm' || s === 'fejrm' || s === 'ferjrm@gmail.com' || s === 'fejrm@hotmail.com' || s === 'ferjrm@hotmail.com') {
-    return 'ferjrm@hotmail.com';
-  }
   if (!s.includes('@')) {
-    s += '@hotmail.com';
+    s += '@gmail.com';
   }
   return s;
 }
@@ -262,98 +252,40 @@ function saveStoredAuth(email, hash, objectId) {
   } catch (e) {}
 }
 
-async function resolveUserCloudId(rawEmail, pwdHash = '') {
-  const norm = normalizeUserEmail(rawEmail);
-  if (!norm) return '';
-
-  // 1. Check BUILTIN_USERS first for zero-latency deterministic resolution
-  if (BUILTIN_USERS[norm]) {
-    const builtinId = BUILTIN_USERS[norm];
-    try {
-      localStorage.setItem('cached_cloud_id_' + norm, builtinId);
-      localStorage.setItem('mortgage_auth_cloud_id', builtinId);
-    } catch(e) {}
-    return builtinId;
-  }
-
-  // 2. Check local cache
+async function getMasterRegistry() {
   try {
-    const cachedId = localStorage.getItem('cached_cloud_id_' + norm);
-    if (cachedId) {
-      return cachedId;
-    }
-  } catch (e) {}
-
-  // 3. Fetch from Master Registry with retries
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const regRes = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
-      if (regRes && regRes.ok) {
-        const regObj = await regRes.json();
-        const regData = (regObj && regObj.data) || {};
-        if (!regData.users) regData.users = {};
-
-        if (regData.users[norm]) {
-          const userObjId = regData.users[norm];
-          try { localStorage.setItem('cached_cloud_id_' + norm, userObjId); } catch(e) {}
-          return userObjId;
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?_t=' + Date.now());
+    if (res && res.ok) {
+      const obj = await res.json();
+      if (obj && obj.data && typeof obj.data === 'object') {
+        if (!obj.data.users || typeof obj.data.users !== 'object') {
+          obj.data.users = {};
         }
-
-        // Create new cloud storage object for user
-        const createRes = await cloudFetch(CLOUD_API_BASE, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: 'hipoteca_user_' + norm,
-            data: {
-              account: norm,
-              passwordHash: pwdHash,
-              updatedAt: Date.now(),
-              lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
-              settings: getDefaultZeroSettings(),
-              revisions: [],
-              payments: []
-            }
-          })
-        });
-
-        if (createRes && createRes.ok) {
-          const createObj = await createRes.json();
-          const newId = createObj.id;
-          regData.users[norm] = newId;
-          regData.updatedAt = Date.now();
-
-          await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: 'hipoteca_sync_registry_master',
-              data: regData
-            })
-          }).catch(() => {});
-
-          try { localStorage.setItem('cached_cloud_id_' + norm, newId); } catch(e) {}
-          return newId;
-        }
+        return obj.data;
       }
-    } catch (err) {
-      console.warn(`Registry resolution attempt ${attempt + 1} failed:`, err);
-      if (attempt < 2) await new Promise(r => setTimeout(r, 600));
     }
+  } catch(e) {
+    console.warn("Get Master Registry notice:", e);
   }
-
-  // 4. Fallback to cached id if registry was unreachable
-  try {
-    const fallbackId = localStorage.getItem('cached_cloud_id_' + norm);
-    if (fallbackId) return fallbackId;
-  } catch (e) {}
-
-  return '';
+  return { users: {}, updatedAt: Date.now() };
 }
-function getSyncTopic(email) {
-  const norm = normalizeUserEmail(email);
-  if (!norm) return '';
-  return 'hipoteca_sync_' + hashPassword(norm).substring(0, 24);
+
+async function saveMasterRegistry(regData) {
+  try {
+    regData.updatedAt = Date.now();
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'hipoteca_sync_registry_master',
+        data: regData
+      })
+    });
+    return res && res.ok;
+  } catch(e) {
+    console.warn("Save Master Registry notice:", e);
+    return false;
+  }
 }
 
 async function cloudFetchState(email) {
@@ -361,16 +293,17 @@ async function cloudFetchState(email) {
   if (!norm) return null;
 
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
-  if (!objId && BUILTIN_USERS[norm]) {
-    objId = BUILTIN_USERS[norm];
-  }
   if (!objId) {
-    objId = await resolveUserCloudId(norm, currentPasswordHash);
+    const regData = await getMasterRegistry();
+    if (regData.users && regData.users[norm] && regData.users[norm].objectId) {
+      objId = regData.users[norm].objectId;
+      try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
+    }
   }
 
   if (objId) {
     try {
-      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId);
+      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId + '?_t=' + Date.now());
       if (res && res.ok) {
         const obj = await res.json();
         if (obj && obj.data && typeof obj.data === 'object') {
@@ -429,14 +362,13 @@ async function cloudPushState(payload) {
     localStorage.setItem('hipoteca_backup_' + norm, payloadStr);
   } catch(e) {}
 
-  let success = false;
-
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
-  if (!objId && BUILTIN_USERS[norm]) {
-    objId = BUILTIN_USERS[norm];
-  }
   if (!objId) {
-    objId = await resolveUserCloudId(norm, payload.passwordHash || '');
+    const regData = await getMasterRegistry();
+    if (regData.users && regData.users[norm] && regData.users[norm].objectId) {
+      objId = regData.users[norm].objectId;
+      try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
+    }
   }
 
   if (objId) {
@@ -449,13 +381,13 @@ async function cloudPushState(payload) {
           data: payload
         })
       });
-      if (res && res.ok) success = true;
+      return res && res.ok;
     } catch (err) {
       console.warn("Cloud push notice:", err);
     }
   }
 
-  return success;
+  return false;
 }
 
 function initRealtimeCloudStream(email) {
@@ -2176,37 +2108,52 @@ async function handleSyncLogin(e) {
   }
 
   const norm = normalizeUserEmail(rawEmail);
-  showSyncModalMsg('Conectando a la cuenta...', 'info');
+  const pwdHash = pwd ? hashPassword(pwd) : '';
+
+  showSyncModalMsg('Verificando cuenta en la nube...', 'info');
 
   try {
-    const pwdHash = pwd ? hashPassword(pwd) : '';
-    const pwdHashLower = pwd ? hashPassword(pwd.toLowerCase()) : '';
+    // 1. Fetch master registry
+    const regData = await getMasterRegistry();
+    const userEntry = regData.users ? regData.users[norm] : null;
 
-    const resolvedObjId = await resolveUserCloudId(norm, pwdHash);
-    currentEmail = norm;
-    currentObjectId = resolvedObjId;
-    currentPasswordHash = pwdHash;
-    saveStoredAuth(norm, pwdHash, resolvedObjId);
+    if (!userEntry || !userEntry.objectId) {
+      showSyncModalMsg('❌ Esta cuenta no existe en la nube. Ve a "Crear Cuenta" para registrarte.', 'error');
+      return;
+    }
 
-    // 1. Fetch cloud state for this user
-    let cloudData = await cloudFetchState(norm);
-
-    // Validate password if account has password hash saved
-    if (cloudData && cloudData.passwordHash) {
-      const expected = cloudData.passwordHash;
-      if (pwdHash && pwdHash !== expected && pwdHashLower !== expected) {
-        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta.', 'error');
+    // 2. Validate password if hash stored
+    if (userEntry.passwordHash) {
+      if (!pwd) {
+        showSyncModalMsg('❌ Introduce tu contraseña.', 'error');
+        return;
+      }
+      if (pwdHash !== userEntry.passwordHash && hashPassword(pwd.toLowerCase()) !== userEntry.passwordHash) {
+        showSyncModalMsg('❌ Contraseña incorrecta.', 'error');
         return;
       }
     }
 
-    if (cloudData && (Array.isArray(cloudData.payments) || Array.isArray(cloudData.revisions) || cloudData.settings)) {
+    const targetObjId = userEntry.objectId;
+
+    // 3. Fetch user state object from cloud
+    const cloudRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
+    if (!cloudRes || !cloudRes.ok) {
+      showSyncModalMsg('❌ Error al obtener los datos de la cuenta.', 'error');
+      return;
+    }
+
+    const cloudObj = await cloudRes.json();
+    const cloudData = cloudObj ? cloudObj.data : null;
+
+    currentEmail = norm;
+    currentPasswordHash = pwdHash;
+    currentObjectId = targetObjId;
+    saveStoredAuth(norm, pwdHash, targetObjId);
+    try { localStorage.setItem('cached_cloud_id_' + norm, targetObjId); } catch(e) {}
+
+    if (cloudData) {
       applyCloudData(cloudData);
-    } else {
-      loadStateFromStorage();
-      if ((revisions && revisions.length > 0) || (payments && payments.length > 0)) {
-        await syncToCloud();
-      }
     }
 
     recomputeBalances();
@@ -2226,7 +2173,7 @@ async function handleSyncLogin(e) {
 
 async function handleCreateUser(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const rawEmail = safeGetVal('sync-reg-email').trim().toLowerCase();
+  const rawEmail = safeGetVal('sync-reg-email').trim();
   const pwd = safeGetVal('sync-reg-password').trim();
   const confirmPwd = safeGetVal('sync-reg-confirm').trim();
 
@@ -2243,26 +2190,66 @@ async function handleCreateUser(e) {
     return;
   }
 
-  showSyncModalMsg('Comprobando cuenta...', 'info');
+  const norm = normalizeUserEmail(rawEmail);
+  const pwdHash = pwd ? hashPassword(pwd) : '';
+
+  showSyncModalMsg('Registrando cuenta en la nube...', 'info');
 
   try {
-    const existing = await cloudFetchState(rawEmail);
-    if (existing && existing.account && (existing.passwordHash || (Array.isArray(existing.revisions) && existing.revisions.length > 0))) {
-      showSyncModalMsg('Esta cuenta ya existe en la nube. Usa la pestaña "Iniciar Sesión".', 'error');
+    // 1. Fetch master registry
+    const regData = await getMasterRegistry();
+
+    // 2. Check if user already exists
+    if (regData.users && regData.users[norm]) {
+      showSyncModalMsg('Esta cuenta ya existe en la nube. Ve a la pestaña "Iniciar Sesión".', 'error');
       return;
     }
 
-    const pwdHash = pwd ? hashPassword(pwd) : '';
-    currentEmail = rawEmail;
-    currentPasswordHash = pwdHash;
-    saveStoredAuth(rawEmail, pwdHash, '');
+    // 3. Create new cloud document for user
+    const defaultSettings = (settings && settings.initialCapital > 0) ? settings : getDefaultZeroSettings();
+    const defaultRevisions = Array.isArray(revisions) ? revisions : [];
+    const defaultPayments = Array.isArray(payments) ? payments : [];
 
-    // If local device has revisions, keep them! Otherwise start zero.
-    if (!revisions || revisions.length === 0) {
-      settings = getDefaultZeroSettings();
-      revisions = [];
-      payments = [];
+    const createRes = await cloudFetch(CLOUD_API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'hipoteca_user_' + norm,
+        data: {
+          account: norm,
+          passwordHash: pwdHash,
+          updatedAt: Date.now(),
+          lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+          settings: defaultSettings,
+          revisions: defaultRevisions,
+          payments: defaultPayments
+        }
+      })
+    });
+
+    if (!createRes || !createRes.ok) {
+      showSyncModalMsg('Error al conectar con el servidor en la nube. Inténtalo de nuevo.', 'error');
+      return;
     }
+
+    const createObj = await createRes.json();
+    const newObjId = createObj.id;
+
+    // 4. Save to Master Registry
+    if (!regData.users) regData.users = {};
+    regData.users[norm] = {
+      objectId: newObjId,
+      passwordHash: pwdHash,
+      createdAt: Date.now()
+    };
+    await saveMasterRegistry(regData);
+
+    // 5. Update session variables
+    currentEmail = norm;
+    currentPasswordHash = pwdHash;
+    currentObjectId = newObjId;
+    saveStoredAuth(norm, pwdHash, newObjId);
+    try { localStorage.setItem('cached_cloud_id_' + norm, newObjId); } catch(e) {}
 
     recomputeBalances();
     updateDashboardUI();
@@ -2271,10 +2258,8 @@ async function handleCreateUser(e) {
     updateSyncUI('● En Tiempo Real', '#10b981');
     closeSyncModal();
     switchTab('dashboard');
-    showToast('Cuenta creada como ' + rawEmail);
+    showToast('Cuenta creada y sincronizada: ' + norm);
 
-    await syncToCloud();
-    initRealtimeCloudStream(rawEmail);
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al crear cuenta: ' + err.message, 'error');
@@ -2318,26 +2303,55 @@ async function handleDeleteAccount(e) {
     return;
   }
 
-  showSyncModalMsg('Eliminando cuenta...', 'info');
+  showSyncModalMsg('Eliminando cuenta de la nube...', 'info');
 
   try {
     const norm = normalizeUserEmail(currentEmail);
-    localStorage.removeItem('hipoteca_user_' + norm);
-    localStorage.removeItem('hipoteca_backup_' + norm);
+    const targetObjId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
 
-    // Push empty deleted marker to topic
-    await cloudPushState({
-      account: norm,
-      passwordHash: '',
-      updatedAt: Date.now(),
-      deleted: true,
-      settings: getDefaultZeroSettings(),
-      revisions: [],
-      payments: []
-    });
+    // 1. HTTP DELETE object from restful-api.dev
+    if (targetObjId) {
+      await cloudFetch(CLOUD_API_BASE + '/' + targetObjId, { method: 'DELETE' }).catch(() => {});
+    }
 
-    await handleLogout();
-    showToast('Cuenta eliminada con éxito.');
+    // 2. Remove user from Master Registry
+    const regData = await getMasterRegistry();
+    if (regData.users && regData.users[norm]) {
+      delete regData.users[norm];
+      await saveMasterRegistry(regData);
+    }
+
+    // 3. Clear all local storage keys
+    try {
+      localStorage.removeItem('hipoteca_user_' + norm);
+      localStorage.removeItem('hipoteca_backup_' + norm);
+      localStorage.removeItem('cached_cloud_id_' + norm);
+      localStorage.removeItem('mortgage_auth_email');
+      localStorage.removeItem('mortgage_auth_hash');
+      localStorage.removeItem('mortgage_auth_cloud_id');
+    } catch(e) {}
+
+    // 4. Reset session and local data
+    if (realtimePollInterval) {
+      clearInterval(realtimePollInterval);
+      realtimePollInterval = null;
+    }
+    currentEmail = '';
+    currentPasswordHash = '';
+    currentObjectId = '';
+
+    settings = getDefaultZeroSettings();
+    revisions = [];
+    payments = [];
+
+    recomputeBalances();
+    updateDashboardUI();
+    renderHistoryTable();
+    renderRevisionsTable();
+    updateSyncUI('Desconectado', '#94a3b8');
+    closeSyncModal();
+    switchTab('dashboard');
+    showToast('Cuenta eliminada permanentemente de la nube.');
   } catch (err) {
     showToast('Error al eliminar cuenta: ' + err.message);
   }
