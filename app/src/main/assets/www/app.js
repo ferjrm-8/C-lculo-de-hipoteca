@@ -102,21 +102,21 @@ async function cloudFetch(url, options = {}) {
       const respRaw = window.AndroidBridge.httpRequest(url, method, headersJson, bodyStr);
       if (respRaw) {
         const parsed = JSON.parse(respRaw);
-        if (parsed && parsed.status && parsed.status >= 200 && parsed.status < 400) {
+        if (parsed && typeof parsed.status === 'number' && parsed.status > 0) {
           return {
             ok: parsed.status >= 200 && parsed.status < 300,
             status: parsed.status,
-            statusText: parsed.statusText,
+            statusText: parsed.statusText || '',
             json: async () => {
               try { return JSON.parse(parsed.body); }
               catch(e) { return {}; }
             },
-            text: async () => parsed.body
+            text: async () => parsed.body || ''
           };
         }
       }
     } catch (err) {
-      console.warn("AndroidBridge request failed, falling back to window.fetch:", err);
+      console.warn("AndroidBridge request error:", err);
     }
   }
 
