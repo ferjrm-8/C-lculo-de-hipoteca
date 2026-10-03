@@ -12,14 +12,12 @@ function getDefaultZeroSettings() {
     initialCapital: 0,
     totalTermYears: 25,
     annualInterestRate: 2.50,
-    coOwner1Name: "Owner1",
-    coOwner2Name: "Owner2",
+    coOwner1Name: "1º Propietario",
+    coOwner2Name: "2º Propietario",
     coOwner1Percentage: 50.00,
     coOwner2Percentage: 50.00,
-    internalDebt1: 0,
-    internalDebt2: 0,
-    internalDebtLaura: 0,
-    internalDebtRak: 0
+    internalDebtOwner1: 0,
+    internalDebtOwner2: 0
   };
 }
 
@@ -32,7 +30,9 @@ let payments = [];
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
-const MASTER_REGISTRY_BIN = 'caedfaf';
+const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
+const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
+let currentObjectId = '';
 let currentEmail = '';
 let currentBinId = '';
 let currentPasswordHash = '';
@@ -133,85 +133,89 @@ function getStoredAuth() {
   try {
     const rawEmail = localStorage.getItem('mortgage_auth_email');
     if (!rawEmail) {
-      return { email: '', hash: '', bin: '' };
+      return { email: '', hash: '', objectId: '' };
     }
     const email = normalizeUserEmail(rawEmail);
     const hash = localStorage.getItem('mortgage_auth_hash') || '';
-    const bin = localStorage.getItem('mortgage_auth_bin') || '';
-    return { email, hash, bin };
+    const objectId = localStorage.getItem('mortgage_auth_cloud_id') || '';
+    return { email, hash, objectId };
   } catch (e) {
-    return { email: '', hash: '', bin: '' };
+    return { email: '', hash: '', objectId: '' };
   }
 }
 
-function saveStoredAuth(email, hash, bin) {
+function saveStoredAuth(email, hash, objectId) {
   try {
     const norm = normalizeUserEmail(email);
     if (norm) {
       localStorage.setItem('mortgage_auth_email', norm);
       localStorage.setItem('mortgage_auth_hash', hash || '');
-      localStorage.setItem('mortgage_auth_bin', bin || '');
+      localStorage.setItem('mortgage_auth_cloud_id', objectId || '');
     } else {
       localStorage.removeItem('mortgage_auth_email');
       localStorage.removeItem('mortgage_auth_hash');
+      localStorage.removeItem('mortgage_auth_cloud_id');
       localStorage.removeItem('mortgage_auth_bin');
     }
   } catch (e) {}
 }
 
-async function resolveUserBin(rawEmail, pwdHash = '') {
+async function resolveUserCloudId(rawEmail, pwdHash = '') {
   const norm = normalizeUserEmail(rawEmail);
   if (!norm) return '';
 
-  const regUrl = 'https://extendsclass.com/api/json-storage/bin/' + MASTER_REGISTRY_BIN + '?t=' + Date.now();
   try {
-    const regRes = await fetch(regUrl);
+    const regRes = await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
     if (regRes.ok) {
-      const reg = await regRes.json();
-      if (!reg.users) reg.users = {};
+      const regObj = await regRes.json();
+      const regData = regObj.data || {};
+      if (!regData.users) regData.users = {};
 
-      if (reg.users[norm]) {
-        return reg.users[norm];
+      if (regData.users[norm]) {
+        return regData.users[norm];
       }
 
-      // Create new bin on ExtendsClass
-      const createRes = await fetch('https://extendsclass.com/api/json-storage/bin', {
+      // Create new cloud storage object for user
+      const createRes = await fetch(CLOUD_API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account: norm,
-          passwordHash: pwdHash,
-          updatedAt: Date.now(),
-          settings: getDefaultZeroSettings(),
-          revisions: [],
-          payments: []
+          name: 'hipoteca_user_' + norm,
+          data: {
+            account: norm,
+            passwordHash: pwdHash,
+            updatedAt: Date.now(),
+            lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+            settings: getDefaultZeroSettings(),
+            revisions: [],
+            payments: []
+          }
         })
       });
 
       if (createRes.ok) {
-        const createData = await createRes.json();
-        const newBinId = createData.id;
-        reg.users[norm] = newBinId;
+        const createObj = await createRes.json();
+        const newId = createObj.id;
+        regData.users[norm] = newId;
+        regData.updatedAt = Date.now();
 
-        // Save back to registry
-        await fetch('https://extendsclass.com/api/json-storage/bin/' + MASTER_REGISTRY_BIN, {
+        await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(reg)
+          body: JSON.stringify({
+            name: 'hipoteca_sync_registry_master',
+            data: regData
+          })
         });
 
-        return newBinId;
+        return newId;
       }
     }
   } catch (err) {
-    console.warn("Registry resolution notice:", err);
+    console.warn('Registry resolution error:', err);
   }
-
-  // Fallback
-  const h = hashPassword(norm);
-  return (h && h.length >= 7) ? h.substring(0, 7) : 'ddbcbca';
+  return '';
 }
-
 let firestoreUnsubscribe = null;
 
 function sanitizeSyncKey(val) {
@@ -255,7 +259,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   const auth = getStoredAuth();
   currentEmail = auth.email;
   currentPasswordHash = auth.hash;
-  currentBinId = auth.bin;
+  currentObjectId = auth.objectId;
+  currentBinId = auth.objectId;
 
   if (currentEmail) {
     loadStateFromStorage();
@@ -467,7 +472,7 @@ function updateDashboardUI() {
       statusElem.style.color = "var(--text-muted)";
     } else {
       statusElem.textContent = accBal >= 0 
-        ? "Saldo acumulado a favor de Owner2 (+)" 
+        ? "Saldo a favor (2º Propietario) (+)" 
         : "Saldo pendiente de regularizar (-)";
       statusElem.style.color = accBal >= 0 ? 'var(--primary)' : 'var(--red)';
     }
@@ -503,27 +508,57 @@ function updateDashboardUI() {
     document.getElementById('split-track-rak').style.width = pctOwner1 + '%';
   }
 
-  // 3 Revisions boxes on Dashboard
-  const rNov = revisions.find(r => r.startMonth === 11 || r.startMonth === 12) || revisions[0];
-  const rFeb = revisions.find(r => r.startMonth >= 2 && r.startMonth <= 5) || revisions[1];
-  const rJul = revisions.find(r => r.startMonth >= 6 && r.startMonth <= 9) || revisions[2];
+  // Dynamic Revision card on Dashboard
+  const revEmptyEl = document.getElementById('dashboard-rev-empty');
+  const revCardEl = document.getElementById('dashboard-rev-card');
+  const revBadgeEl = document.getElementById('dashboard-rev-badge');
+  const revCountBadgeEl = document.getElementById('dashboard-rev-count-badge');
 
-  if (rNov && document.getElementById('rev1-full-fee')) {
-    document.getElementById('rev1-full-fee').textContent = fmt(rNov.feeTotal);
-    document.getElementById('rev1-laura-fee').textContent = fmt(rNov.lauraFee);
-    document.getElementById('rev1-rak-fee').textContent = fmt(rNov.rakFee);
-  }
-  if (rFeb && document.getElementById('rev2-full-fee')) {
-    document.getElementById('rev2-full-fee').textContent = fmt(rFeb.feeTotal);
-    document.getElementById('rev2-laura-fee').textContent = fmt(rFeb.lauraFee);
-    document.getElementById('rev2-rak-fee').textContent = fmt(rFeb.rakFee);
-  }
-  if (rJul && document.getElementById('rev3-full-fee')) {
-    document.getElementById('rev3-full-fee').textContent = fmt(rJul.feeTotal);
-    document.getElementById('rev3-laura-fee').textContent = fmt(rJul.lauraFee);
-    document.getElementById('rev3-rak-fee').textContent = fmt(rJul.rakFee);
-  }
+  if (revCountBadgeEl) revCountBadgeEl.textContent = String(revisions.length);
 
+  if (!revisions || revisions.length === 0) {
+    if (revEmptyEl) revEmptyEl.style.display = 'block';
+    if (revCardEl) revCardEl.style.display = 'none';
+    if (revBadgeEl) revBadgeEl.style.display = 'none';
+  } else {
+    if (revEmptyEl) revEmptyEl.style.display = 'none';
+    if (revCardEl) revCardEl.style.display = 'block';
+    if (revBadgeEl) revBadgeEl.style.display = 'inline-block';
+
+    const latestRev = revisions[revisions.length - 1];
+    const sMonth = MONTH_LABELS[(latestRev.startMonth - 1) % 12] || '';
+    const eMonth = MONTH_LABELS[(latestRev.endMonth - 1) % 12] || '';
+
+    if (document.getElementById('dashboard-rev-period')) {
+      document.getElementById('dashboard-rev-period').textContent = 'Revisión #' + revisions.length + ' (' + sMonth + ' ' + latestRev.startYear + ' - ' + eMonth + ' ' + latestRev.endYear + ')';
+    }
+    if (document.getElementById('dashboard-rev-note')) {
+      document.getElementById('dashboard-rev-note').textContent = latestRev.note || 'Periodo vigente de liquidación bancaria';
+    }
+    if (document.getElementById('dashboard-rev-rate')) {
+      document.getElementById('dashboard-rev-rate').textContent = (latestRev.annualRate || 0).toFixed(2).replace('.', ',') + '%';
+    }
+    if (document.getElementById('dashboard-rev-fee-total')) {
+      document.getElementById('dashboard-rev-fee-total').textContent = fmt(latestRev.feeTotal);
+    }
+    if (document.getElementById('dashboard-rev-cap-total')) {
+      document.getElementById('dashboard-rev-cap-total').textContent = fmt(latestRev.capTotal);
+    }
+    if (document.getElementById('dashboard-rev-fee-co2')) {
+      document.getElementById('dashboard-rev-fee-co2').textContent = fmt(latestRev.rakFee);
+    }
+    if (document.getElementById('dashboard-rev-pct-co2')) {
+      const p2 = latestRev.pctOwner1 !== undefined ? latestRev.pctOwner1 : (100 - (latestRev.pctOwner2 || 50));
+      document.getElementById('dashboard-rev-pct-co2').textContent = Number(p2).toFixed(2).replace('.', ',') + '%';
+    }
+    if (document.getElementById('dashboard-rev-fee-co1')) {
+      document.getElementById('dashboard-rev-fee-co1').textContent = fmt(latestRev.lauraFee);
+    }
+    if (document.getElementById('dashboard-rev-pct-co1')) {
+      const p1 = latestRev.pctOwner2 !== undefined ? latestRev.pctOwner2 : 50;
+      document.getElementById('dashboard-rev-pct-co1').textContent = Number(p1).toFixed(2).replace('.', ',') + '%';
+    }
+  }
   renderHistoryTable();
   renderRevisionsTable();
   drawFinancialCharts();
@@ -979,108 +1014,6 @@ function applyRevisionToRange(revId) {
   }
 }
 
-async function scanAndRecoverBackups() {
-  const foundBackups = [];
-
-  // 1. Scan LocalStorage across all known version keys
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('rev') || key.includes('hipoteca') || key.includes('backup') || key.includes('payment'))) {
-        try {
-          const val = JSON.parse(localStorage.getItem(key));
-          if (Array.isArray(val) && val.length > 0) {
-            foundBackups.push({
-              source: 'local',
-              key,
-              count: val.length,
-              data: val,
-              type: (val[0].startYear || val[0].capTotal) ? 'revisiones' : 'pagos'
-            });
-          }
-        } catch(e) {}
-      }
-    }
-  } catch(err) {}
-
-  // 2. Scan Cloud Storage
-  try {
-    const cloudBins = [
-      { id: currentBinId || DEFAULT_USER_BIN, name: currentEmail || DEFAULT_USER_EMAIL },
-      { id: DEFAULT_USER_BIN, name: 'ferjrm@hotmail.com' }
-    ];
-    // deduplicate
-    const seenBins = new Set();
-
-    for (const b of cloudBins) {
-      if (seenBins.has(b.id)) continue;
-      seenBins.add(b.id);
-
-      try {
-        const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${b.id}?t=${Date.now()}`);
-        if (res.ok) {
-          const cData = await res.json();
-          if (cData && ((cData.payments && cData.payments.length > 0) || (cData.revisions && cData.revisions.length > 0))) {
-            const pCount = cData.payments ? cData.payments.length : 0;
-            const rCount = cData.revisions ? cData.revisions.length : 0;
-            const dateStr = cData.lastUpdatedText || (cData.updatedAt ? new Date(cData.updatedAt).toLocaleDateString('es-ES') : '');
-            foundBackups.push({
-              source: 'cloud',
-              key: b.name,
-              binId: b.id,
-              count: pCount,
-              rCount: rCount,
-              dateStr,
-              cloudData: cData,
-              type: 'completo_nube'
-            });
-          }
-        }
-      } catch(e) {}
-    }
-  } catch(err) {}
-
-  if (foundBackups.length === 0) {
-    alert("No se encontraron copias de seguridad en la nube ni en este dispositivo.");
-    return;
-  }
-
-  let msg = "Copias de seguridad encontradas (Nube y Local):\n\n";
-  foundBackups.forEach((b, idx) => {
-    if (b.source === 'cloud') {
-      msg += `${idx + 1}. ☁️ NUBE [${b.key}]: ${b.count} meses, ${b.rCount} revisiones (${b.dateStr})\n`;
-    } else {
-      msg += `${idx + 1}. 📱 LOCAL [${b.key}]: ${b.count} ${b.type}\n`;
-    }
-  });
-  msg += "\nEscribe el número de la copia que deseas restaurar (o pulsa Cancelar):";
-
-  const choice = prompt(msg, "1");
-  if (choice) {
-    const selected = foundBackups[parseInt(choice) - 1];
-    if (selected) {
-      if (selected.source === 'cloud') {
-        applyCloudData(selected.cloudData);
-        currentBinId = selected.binId;
-        currentEmail = selected.key;
-        saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
-        showToast(`Copia de la nube [${selected.key}] restaurada con éxito`);
-      } else {
-        if (selected.type === 'revisiones') {
-          revisions = selected.data;
-          showToast(`Restauradas ${selected.count} revisiones locales`);
-        } else {
-          payments = selected.data;
-          showToast(`Restaurados ${selected.count} meses locales`);
-        }
-        saveStateToStorage();
-        recomputeBalances();
-        updateDashboardUI();
-      }
-      updateDashboardUI();
-    }
-  }
-}
 
 /* ==========================================================
    MONTH REGISTRATION FORM & REACTIVE BIDIRECTIONAL MATH
@@ -1569,7 +1502,7 @@ function exportDataJSON() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `hipoteca_laura_rak_${new Date().toISOString().substring(0, 10)}.json`;
+  a.download = `hipoteca_copropietarios_${new Date().toISOString().substring(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
   showToast("Copia descargada");
@@ -1750,27 +1683,28 @@ async function initCloudSync() {
   }
   updateSyncUI('Sincronizando...', '#f59e0b');
 
-  if (!currentBinId) {
-    currentBinId = await resolveUserBin(currentEmail, currentPasswordHash);
-    saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
+  if (!currentObjectId) {
+    currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
+    saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
   }
 
-  if (!currentBinId) {
+  if (!currentObjectId) {
     updateSyncUI('Conectado', '#10b981');
     return;
   }
 
   let cloudApplied = false;
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
     if (res.ok) {
-      const data = await res.json();
+      const obj = await res.json();
+      const cloudData = obj.data;
       const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
-      if (data && data.updatedAt && (Array.isArray(data.payments) || data.settings)) {
-        if (data.updatedAt > localTime) {
-          applyCloudData(data);
+      if (cloudData && cloudData.updatedAt && (Array.isArray(cloudData.payments) || cloudData.settings)) {
+        if (cloudData.updatedAt > localTime) {
+          applyCloudData(cloudData);
           cloudApplied = true;
-        } else if (localTime > data.updatedAt) {
+        } else if (localTime > cloudData.updatedAt) {
           await syncToCloud();
           cloudApplied = true;
         } else {
@@ -1825,7 +1759,7 @@ function applyCloudData(data) {
 
 async function syncToCloud() {
   if (isSyncingIncoming) return;
-  if (!currentEmail || !currentBinId) return;
+  if (!currentEmail || !currentObjectId) return;
 
   const now = Date.now();
   localLastSyncTime = now;
@@ -1845,23 +1779,27 @@ async function syncToCloud() {
   };
 
   try {
-    fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}`, {
+    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).then(res => {
-      if (res.ok) updateSyncUI('● En Tiempo Real', '#10b981');
-    }).catch(() => {});
-  } catch (err) {}
+      body: JSON.stringify({
+        name: 'hipoteca_user_' + currentEmail,
+        data: payload
+      })
+    });
+    if (res.ok) {
+      updateSyncUI('● En Tiempo Real', '#10b981');
+    }
+  } catch (err) {
+    console.warn("Cloud sync notice:", err);
+  }
 
   if (window.firebaseSync && window.firebaseSync.db) {
-    const { db, doc, setDoc } = window.firebaseSync;
     try {
+      const { db, doc, setDoc } = window.firebaseSync;
       const userDocId = sanitizeSyncKey(currentEmail);
       const docRef = doc(db, 'mortgages', userDocId);
-      setDoc(docRef, payload, { merge: true }).then(() => {
-        updateSyncUI('● En Tiempo Real', '#10b981');
-      }).catch(() => {});
+      setDoc(docRef, payload, { merge: true }).catch(() => {});
     } catch(e) {}
   }
 }
@@ -1871,16 +1809,17 @@ function startRealtimePoller() {
     clearInterval(realtimePollInterval);
     realtimePollInterval = null;
   }
-  if (!currentEmail || !currentBinId) return;
+  if (!currentEmail || !currentObjectId) return;
 
   realtimePollInterval = setInterval(async () => {
     if (isSyncingIncoming) return;
-    if (!currentEmail || !currentBinId) return;
+    if (!currentEmail || !currentObjectId) return;
 
     try {
-      const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+      const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
       if (res.ok) {
-        const data = await res.json();
+        const obj = await res.json();
+        const data = obj.data;
         const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
         if (data && data.updatedAt && data.updatedAt > (localTime + 500)) {
           if (Array.isArray(data.payments) || data.settings) {
@@ -1903,23 +1842,24 @@ async function triggerManualSync() {
   if (icon) icon.classList.add('spin-active');
   updateSyncUI('Sincronizando...', '#f59e0b');
 
-  if (!currentBinId) {
-    currentBinId = await resolveUserBin(currentEmail, currentPasswordHash);
-    saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
+  if (!currentObjectId) {
+    currentObjectId = await resolveUserCloudId(currentEmail, currentPasswordHash);
+    saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
   }
 
   let success = false;
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${currentBinId}?t=${Date.now()}`);
+    const res = await fetch(CLOUD_API_BASE + '/' + currentObjectId + '?t=' + Date.now());
     if (res.ok) {
-      const cloudData = await res.json();
+      const obj = await res.json();
+      const cloudData = obj.data;
       const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || 0;
       if (cloudData && cloudData.updatedAt && cloudData.updatedAt > localTime && (Array.isArray(cloudData.payments) || cloudData.settings)) {
         applyCloudData(cloudData);
-        showToast(`Sincronizado desde la nube (${payments.length} meses)`);
+        showToast('Sincronizado desde la nube (' + payments.length + ' meses)');
       } else {
         await syncToCloud();
-        showToast(`Sincronizados ${payments.length} meses en la nube`);
+        showToast('Sincronizados ' + payments.length + ' meses en la nube');
       }
       success = true;
     }
@@ -1927,7 +1867,7 @@ async function triggerManualSync() {
 
   if (!success) {
     await syncToCloud();
-    showToast(`Guardados ${payments.length} meses en la nube`);
+    showToast('Guardados ' + payments.length + ' meses en la nube');
   }
 
   if (icon) icon.classList.remove('spin-active');
@@ -1982,37 +1922,48 @@ async function handleSyncLogin(e) {
   }
 
   const pwdHash = pwd ? hashPassword(pwd) : '';
-  showSyncModalMsg('Conectando...', 'info');
-
-  currentEmail = rawEmail;
-  currentPasswordHash = pwdHash;
-
-  const binId = await resolveUserBin(rawEmail, pwdHash);
-  currentBinId = binId;
-  saveStoredAuth(rawEmail, pwdHash, binId);
+  showSyncModalMsg('Conectando a la nube...', 'info');
 
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${binId}?t=${Date.now()}`);
+    const objectId = await resolveUserCloudId(rawEmail, pwdHash);
+    if (!objectId) {
+      showSyncModalMsg('No se pudo conectar con el servidor en la nube.', 'error');
+      return;
+    }
+
+    currentEmail = rawEmail;
+    currentPasswordHash = pwdHash;
+    currentObjectId = objectId;
+    saveStoredAuth(rawEmail, pwdHash, objectId);
+
+    const res = await fetch(CLOUD_API_BASE + '/' + objectId + '?t=' + Date.now());
     if (res.ok) {
-      const cloudData = await res.json();
-      applyCloudData(cloudData);
+      const obj = await res.json();
+      const cloudData = obj.data;
+      if (cloudData && cloudData.passwordHash && pwdHash && cloudData.passwordHash !== pwdHash) {
+        showSyncModalMsg('❌ Contraseña incorrecta para esta cuenta.', 'error');
+        return;
+      }
+      if (cloudData) {
+        applyCloudData(cloudData);
+      }
     } else {
       loadStateFromStorage();
     }
+
+    recomputeBalances();
+    updateDashboardUI();
+    renderHistoryTable();
+    renderRevisionsTable();
+    updateSyncUI('● En Tiempo Real', '#10b981');
+    closeSyncModal();
+    switchTab('dashboard');
+    showToast('Conectado como ' + rawEmail);
+
+    startRealtimePoller();
   } catch (err) {
-    loadStateFromStorage();
+    showSyncModalMsg('Error al conectar: ' + err.message, 'error');
   }
-
-  recomputeBalances();
-  updateDashboardUI();
-  renderHistoryTable();
-  renderRevisionsTable();
-  updateSyncUI('● En Tiempo Real', '#10b981');
-  closeSyncModal();
-  switchTab('dashboard');
-  showToast(`Conectado como ${rawEmail}`);
-
-  startRealtimePoller();
 }
 
 /* ==========================================================
@@ -2044,29 +1995,37 @@ async function handleCreateUser(e) {
   const pwdHash = pwd ? hashPassword(pwd) : '';
   showSyncModalMsg('Creando cuenta en la nube...', 'info');
 
-  currentEmail = rawEmail;
-  currentPasswordHash = pwdHash;
+  try {
+    const objectId = await resolveUserCloudId(rawEmail, pwdHash);
+    if (!objectId) {
+      showSyncModalMsg('No se pudo crear la cuenta en la nube.', 'error');
+      return;
+    }
 
-  const binId = await resolveUserBin(rawEmail, pwdHash);
-  currentBinId = binId;
-  saveStoredAuth(rawEmail, pwdHash, binId);
+    currentEmail = rawEmail;
+    currentPasswordHash = pwdHash;
+    currentObjectId = objectId;
+    saveStoredAuth(rawEmail, pwdHash, objectId);
 
-  // New account starts clean/zero
-  settings = getDefaultZeroSettings();
-  revisions = [];
-  payments = [];
+    // New account starts clean/zero
+    settings = getDefaultZeroSettings();
+    revisions = [];
+    payments = [];
 
-  recomputeBalances();
-  updateDashboardUI();
-  renderHistoryTable();
-  renderRevisionsTable();
-  updateSyncUI('● En Tiempo Real', '#10b981');
-  closeSyncModal();
-  switchTab('dashboard');
-  showToast(`Cuenta creada como ${rawEmail}`);
+    recomputeBalances();
+    updateDashboardUI();
+    renderHistoryTable();
+    renderRevisionsTable();
+    updateSyncUI('● En Tiempo Real', '#10b981');
+    closeSyncModal();
+    switchTab('dashboard');
+    showToast('Cuenta creada como ' + rawEmail);
 
-  await syncToCloud();
-  startRealtimePoller();
+    await syncToCloud();
+    startRealtimePoller();
+  } catch (err) {
+    showSyncModalMsg('Error al crear cuenta: ' + err.message, 'error');
+  }
 }
 
 async function handleLogout(e) {
@@ -2076,13 +2035,10 @@ async function handleLogout(e) {
     realtimePollInterval = null;
   }
 
-  localStorage.removeItem('mortgage_auth_email');
-  localStorage.removeItem('mortgage_auth_hash');
-  localStorage.removeItem('mortgage_auth_bin');
-
+  saveStoredAuth('', '', '');
   currentEmail = '';
   currentPasswordHash = '';
-  currentBinId = '';
+  currentObjectId = '';
 
   settings = getDefaultZeroSettings();
   revisions = [];
@@ -2100,8 +2056,45 @@ async function handleLogout(e) {
 
 async function handleDeleteAccount(e) {
   if (e && e.preventDefault) e.preventDefault();
-  if (confirm("¿Estás seguro de cerrar sesión y desconectar este dispositivo?")) {
-    await handleLogout(e);
+  if (!currentEmail) {
+    showToast('No hay ninguna sesión activa para eliminar');
+    return;
+  }
+
+  if (!confirm('¿Estás seguro de que deseas eliminar permanentemente la cuenta ' + currentEmail + ' y todos sus datos en la nube?')) {
+    return;
+  }
+
+  showSyncModalMsg('Eliminando cuenta...', 'info');
+
+  try {
+    if (currentObjectId) {
+      await fetch(CLOUD_API_BASE + '/' + currentObjectId, { method: 'DELETE' }).catch(() => {});
+
+      const regRes = await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?t=' + Date.now());
+      if (regRes.ok) {
+        const regObj = await regRes.json();
+        const regData = regObj.data || {};
+        if (regData.users && regData.users[currentEmail]) {
+          delete regData.users[currentEmail];
+          regData.updatedAt = Date.now();
+          await fetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: 'hipoteca_sync_registry_master',
+              data: regData
+            })
+          }).catch(() => {});
+        }
+      }
+    }
+
+    localStorage.removeItem('hipoteca_user_' + currentEmail);
+    await handleLogout();
+    showToast('Cuenta eliminada con éxito.');
+  } catch (err) {
+    showToast('Error al eliminar cuenta: ' + err.message);
   }
 }
 
@@ -2123,7 +2116,7 @@ async function handleChangePassword(e) {
   }
 
   currentPasswordHash = hashPassword(newPwd);
-  saveStoredAuth(currentEmail, currentPasswordHash, currentBinId);
+  saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
   await syncToCloud();
 
   if (document.getElementById('pwd-old')) document.getElementById('pwd-old').value = '';
@@ -2143,8 +2136,8 @@ function handleQuickUnlock() {
   }
   currentEmail = email;
   currentPasswordHash = '';
-  saveStoredAuth(email, '', currentBinId);
-  showToast(`Acceso desbloqueado sin contraseña`);
+  saveStoredAuth(email, '', currentObjectId);
+  showToast('Acceso desbloqueado sin contraseña');
   handleSyncLogin();
 }
 
@@ -2160,7 +2153,7 @@ function exportSyncCode() {
     const code = btoa(unescape(encodeURIComponent(JSON.stringify(bundle))));
     navigator.clipboard.writeText(code).then(() => {
       showToast('📋 Código de sincronización copiado al portapapeles');
-      alert('¡Código de sincronización copiado!\n\nPuedes pegarlo en cualquier otro dispositivo pulsando "Pegar Código" para sincronizar tus datos al instante.');
+      alert("¡Código de sincronización copiado!\n\nPuedes pegarlo en cualquier otro dispositivo para sincronizar tus datos al instante.");
     }).catch(() => {
       prompt('Copia este código de sincronización y pégalo en tu otro dispositivo:', code);
     });
@@ -2177,7 +2170,7 @@ function importSyncCodePrompt() {
     const bundle = JSON.parse(jsonStr);
     if (bundle && (Array.isArray(bundle.payments) || bundle.settings)) {
       applyCloudData(bundle);
-      showToast(`✅ Sincronizados ${payments.length} meses`);
+      showToast('✅ Sincronizados ' + payments.length + ' meses');
       closeSyncModal();
     } else {
       alert('El código introducido no contiene datos válidos.');
@@ -2202,7 +2195,7 @@ function downloadBackupJSON() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `hipoteca_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = 'hipoteca_backup_' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

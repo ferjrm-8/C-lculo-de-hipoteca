@@ -1,9 +1,6 @@
 {
-  "appName": "Hipoteca Compartida",
-  "updatedAt": 1791012283027,
-  "lastUpdatedText": "3/10/2026, 9:24:43",
   "account": "",
-  "totalMonths": 0,
+  "updatedAt": 1791013048944,
   "settings": {
     "initialCapital": 0,
     "totalTermYears": 25,
@@ -12,10 +9,8 @@
     "coOwner2Name": "2º Propietario",
     "coOwner1Percentage": 50,
     "coOwner2Percentage": 50,
-    "internalDebt1": 0,
-    "internalDebt2": 0,
-    "internalDebtLaura": 0,
-    "internalDebtRak": 0
+    "internalDebtOwner1": 0,
+    "internalDebtOwner2": 0
   },
   "revisions": [],
   "payments": []
