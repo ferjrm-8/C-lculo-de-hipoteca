@@ -29,9 +29,9 @@ import java.util.concurrent.TimeUnit
 
 class AndroidNetworkBridge {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
         .build()
 
     private val executor = java.util.concurrent.Executors.newCachedThreadPool()
@@ -43,10 +43,15 @@ class AndroidNetworkBridge {
                 val reqBuilder = Request.Builder().url(url)
 
                 if (headersJson.isNotEmpty() && headersJson != "{}") {
-                    val headersObj = JSONObject(headersJson)
-                    for (key in headersObj.keys()) {
-                        reqBuilder.header(key, headersObj.getString(key))
-                    }
+                    try {
+                        val headersObj = JSONObject(headersJson)
+                        for (key in headersObj.keys()) {
+                            val value = headersObj.optString(key, "")
+                            if (key.isNotBlank() && value.isNotBlank()) {
+                                reqBuilder.header(key, value)
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
 
                 val upperMethod = method.uppercase()
@@ -75,7 +80,7 @@ class AndroidNetworkBridge {
                 result.toString()
             })
 
-            future.get(15, TimeUnit.SECONDS)
+            future.get(10, TimeUnit.SECONDS)
         } catch (e: Exception) {
             val errResult = JSONObject()
             errResult.put("status", 0)

@@ -81,7 +81,8 @@ const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
 const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
 const BUILTIN_USERS = {
   'ferjrm@hotmail.com': 'ff808181a09d98f701a100d8c5f16a0c',
-  'fejrm@hotmail.com': 'ff808181a09d98f701a1015eb1a76ac5'
+  'fejrm@hotmail.com': 'ff808181a09d98f701a1015eb1a76ac5',
+  'ferjrm@gmail.com': 'ff808181a09d98f701a102d7e0866df3'
 };
 let currentObjectId = '';
 let currentEmail = '';
@@ -346,9 +347,6 @@ async function cloudFetchState(email) {
   const norm = normalizeUserEmail(email);
   if (!norm) return null;
 
-  let cloudData = null;
-
-  // 1. Fetch from primary persistent cloud storage (restful-api.dev)
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
   if (!objId && BUILTIN_USERS[norm]) {
     objId = BUILTIN_USERS[norm];
@@ -363,54 +361,15 @@ async function cloudFetchState(email) {
       if (res && res.ok) {
         const obj = await res.json();
         if (obj && obj.data && typeof obj.data === 'object') {
-          cloudData = obj.data;
+          return obj.data;
         }
       }
     } catch (err) {
-      console.warn("Cloud fetch restful-api notice:", err);
+      console.warn("Cloud fetch notice:", err);
     }
   }
 
-  // 2. Fetch from secondary realtime channel (ntfy.sh)
-  const topic = getSyncTopic(norm);
-  let ntfyData = null;
-  if (topic) {
-    try {
-      const res = await cloudFetch('https://ntfy.sh/' + topic + '/json?poll=1&since=24h');
-      if (res && res.ok) {
-        const text = await res.text();
-        const lines = text.trim().split('\n');
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msgObj = JSON.parse(line);
-            if (msgObj.event === 'message' && msgObj.message) {
-              const parsed = JSON.parse(msgObj.message);
-              if (parsed && typeof parsed === 'object') {
-                if (!ntfyData || (parsed.updatedAt && parsed.updatedAt > (ntfyData.updatedAt || 0))) {
-                  ntfyData = parsed;
-                }
-              }
-            }
-          } catch(e) {}
-        }
-      }
-    } catch (err) {
-      console.warn("Cloud fetch ntfy notice:", err);
-    }
-  }
-
-  // 3. Pick the latest data between restful-api and ntfy
-  let bestRemote = null;
-  if (cloudData && ntfyData) {
-    bestRemote = (ntfyData.updatedAt || 0) > (cloudData.updatedAt || 0) ? ntfyData : cloudData;
-  } else {
-    bestRemote = cloudData || ntfyData;
-  }
-
-  if (bestRemote) return bestRemote;
-
-  // 4. Offline fallback: check local cache backups
+  // Offline fallback
   try {
     const rawLocal = localStorage.getItem('hipoteca_user_' + norm) || localStorage.getItem('hipoteca_backup_' + norm);
     if (rawLocal) return JSON.parse(rawLocal);
@@ -465,7 +424,6 @@ async function cloudPushState(payload) {
 
   let success = false;
 
-  // Resolve object ID if needed
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
   if (!objId && BUILTIN_USERS[norm]) {
     objId = BUILTIN_USERS[norm];
@@ -474,7 +432,6 @@ async function cloudPushState(payload) {
     objId = await resolveUserCloudId(norm, payload.passwordHash || '');
   }
 
-  // 1. Primary Persistent Cloud Storage (restful-api.dev)
   if (objId) {
     try {
       const res = await cloudFetch(CLOUD_API_BASE + '/' + objId, {
@@ -487,58 +444,15 @@ async function cloudPushState(payload) {
       });
       if (res && res.ok) success = true;
     } catch (err) {
-      console.warn("Cloud push restful-api notice:", err);
-    }
-  }
-
-  // 2. Secondary Realtime Broadcast (ntfy.sh)
-  const topic = getSyncTopic(norm);
-  if (topic) {
-    try {
-      await cloudFetch('https://ntfy.sh/' + topic, {
-        method: 'POST',
-        headers: {
-          'Title': 'hipoteca_sync_state',
-          'Priority': 'high',
-          'Cache': 'yes',
-          'Content-Type': 'text/plain; charset=utf-8'
-        },
-        body: JSON.stringify(payload)
-      });
-    } catch(err) {
-      console.warn("Cloud push ntfy notice:", err);
+      console.warn("Cloud push notice:", err);
     }
   }
 
   return success;
 }
 
-let realtimeEventSource = null;
-
 function initRealtimeCloudStream(email) {
-  if (realtimeEventSource) {
-    try { realtimeEventSource.close(); } catch(e) {}
-    realtimeEventSource = null;
-  }
-
-  const topic = getSyncTopic(email);
-  if (!topic || typeof EventSource === 'undefined') return;
-
-  try {
-    realtimeEventSource = new EventSource('https://ntfy.sh/' + topic + '/sse');
-    realtimeEventSource.onmessage = (e) => {
-      try {
-        const obj = JSON.parse(e.data);
-        if (obj.event === 'message' && obj.message) {
-          const data = JSON.parse(obj.message);
-          if (data && isCloudDataDifferent(data)) {
-            applyCloudData(data);
-            updateSyncUI('● En Tiempo Real', '#10b981');
-          }
-        }
-      } catch(err) {}
-    };
-  } catch(e) {}
+  // Handled cleanly via background poller (startRealtimePoller) and tab visibility
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
