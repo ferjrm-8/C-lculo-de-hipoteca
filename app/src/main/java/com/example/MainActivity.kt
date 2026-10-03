@@ -47,7 +47,7 @@ class AndroidNetworkBridge {
                         val headersObj = JSONObject(headersJson)
                         for (key in headersObj.keys()) {
                             val value = headersObj.optString(key, "")
-                            if (key.isNotBlank() && value.isNotBlank()) {
+                            if (key.isNotBlank() && value.isNotBlank() && !key.equals("content-type", ignoreCase = true)) {
                                 reqBuilder.header(key, value)
                             }
                         }

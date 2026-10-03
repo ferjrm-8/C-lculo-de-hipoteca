@@ -107,9 +107,9 @@ async function cloudFetch(url, options = {}) {
       const respRaw = window.AndroidBridge.httpRequest(reqUrl, method, headersJson, bodyStr);
       if (respRaw) {
         const parsed = JSON.parse(respRaw);
-        if (parsed && typeof parsed.status === 'number' && parsed.status >= 200 && parsed.status < 300) {
+        if (parsed && typeof parsed.status === 'number' && parsed.status > 0) {
           return {
-            ok: true,
+            ok: parsed.status >= 200 && parsed.status < 300,
             status: parsed.status,
             statusText: parsed.statusText || '',
             json: async () => {
