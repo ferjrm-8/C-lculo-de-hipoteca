@@ -93,13 +93,21 @@ let isSyncingIncoming = false;
 
 // Universal Cloud Fetch: Uses native Android OkHttp Bridge if inside Android APK, or window.fetch in Browser/Web
 async function cloudFetch(url, options = {}) {
+  let reqUrl = url;
+  const method = (options.method || 'GET').toUpperCase();
+  if (method === 'GET') {
+    const sep = reqUrl.includes('?') ? '&' : '?';
+    if (!reqUrl.includes('_t=')) {
+      reqUrl += sep + '_t=' + Date.now();
+    }
+  }
+
   if (window.AndroidBridge && typeof window.AndroidBridge.httpRequest === 'function') {
     try {
-      const method = options.method || 'GET';
       const headersJson = options.headers ? JSON.stringify(options.headers) : '{}';
       const bodyStr = options.body || '';
 
-      const respRaw = window.AndroidBridge.httpRequest(url, method, headersJson, bodyStr);
+      const respRaw = window.AndroidBridge.httpRequest(reqUrl, method, headersJson, bodyStr);
       if (respRaw) {
         const parsed = JSON.parse(respRaw);
         if (parsed && typeof parsed.status === 'number' && parsed.status > 0) {
@@ -120,7 +128,7 @@ async function cloudFetch(url, options = {}) {
     }
   }
 
-  return fetch(url, options);
+  return fetch(reqUrl, options);
 }
 
 function normalizeUserEmail(rawEmail) {
@@ -366,30 +374,49 @@ async function cloudFetchState(email) {
     }
   }
 
-  // Check local cache backups for this user account
-  let localData = null;
+  // If cloud state was fetched from network, return it
+  if (cloudLatest) return cloudLatest;
+
+  // Offline fallback: check local cache backups for this user account
   try {
     const rawLocal = localStorage.getItem('hipoteca_user_' + norm) || localStorage.getItem('hipoteca_backup_' + norm);
-    if (rawLocal) localData = JSON.parse(rawLocal);
+    if (rawLocal) return JSON.parse(rawLocal);
   } catch(e) {}
 
-  if (!cloudLatest) return localData;
-  if (!localData) return cloudLatest;
+  return null;
+}
 
-  // Smart resolution: If one source has revisions/payments and the other is empty, pick the one with data
-  const cloudRevs = Array.isArray(cloudLatest.revisions) ? cloudLatest.revisions.length : 0;
-  const localRevs = Array.isArray(localData.revisions) ? localData.revisions.length : 0;
-  const cloudPays = Array.isArray(cloudLatest.payments) ? cloudLatest.payments.length : 0;
-  const localPays = Array.isArray(localData.payments) ? localData.payments.length : 0;
+function isCloudDataDifferent(remoteData) {
+  if (!remoteData || typeof remoteData !== 'object') return false;
 
-  if (localRevs > cloudRevs || localPays > cloudPays) {
-    return localData;
-  }
-  if (cloudRevs > localRevs || cloudPays > localPays) {
-    return cloudLatest;
+  // 1. Settings difference
+  if (remoteData.settings) {
+    if (JSON.stringify(remoteData.settings) !== JSON.stringify(settings)) {
+      return true;
+    }
   }
 
-  return (cloudLatest.updatedAt || 0) >= (localData.updatedAt || 0) ? cloudLatest : localData;
+  // 2. Revisions difference
+  if (Array.isArray(remoteData.revisions)) {
+    if (JSON.stringify(remoteData.revisions) !== JSON.stringify(revisions)) {
+      return true;
+    }
+  }
+
+  // 3. Payments difference
+  if (Array.isArray(remoteData.payments)) {
+    if (JSON.stringify(remoteData.payments) !== JSON.stringify(payments)) {
+      return true;
+    }
+  }
+
+  // 4. Newer timestamp
+  const cloudUpdatedAt = Number(remoteData.updatedAt) || 0;
+  if (cloudUpdatedAt > localLastSyncTime) {
+    return true;
+  }
+
+  return false;
 }
 
 async function cloudPushState(payload) {
@@ -442,7 +469,7 @@ function initRealtimeCloudStream(email) {
         const obj = JSON.parse(e.data);
         if (obj.event === 'message' && obj.message) {
           const data = JSON.parse(obj.message);
-          if (data && data.updatedAt && data.updatedAt > localLastSyncTime) {
+          if (data && isCloudDataDifferent(data)) {
             applyCloudData(data);
             updateSyncUI('● En Tiempo Real', '#10b981');
           }
@@ -2063,22 +2090,8 @@ async function pollCloudUpdates() {
 
   try {
     const data = await cloudFetchState(currentEmail);
-    if (data) {
-      const cloudUpdatedAt = Number(data.updatedAt) || 0;
-      const localTime = Number(localStorage.getItem('hipoteca_last_updated_time')) || localLastSyncTime;
-      const cloudRevsLen = Array.isArray(data.revisions) ? data.revisions.length : 0;
-      const cloudPaysLen = Array.isArray(data.payments) ? data.payments.length : 0;
-      const localRevsLen = Array.isArray(revisions) ? revisions.length : 0;
-      const localPaysLen = Array.isArray(payments) ? payments.length : 0;
-
-      const hasDifferentCounts = (cloudRevsLen !== localRevsLen) || (cloudPaysLen !== localPaysLen);
-      const hasNewerCloudTime = cloudUpdatedAt > (localTime + 100);
-
-      if (hasNewerCloudTime || (hasDifferentCounts && localLastSyncTime !== cloudUpdatedAt)) {
-        if (Array.isArray(data.payments) || Array.isArray(data.revisions) || data.settings) {
-          applyCloudData(data);
-        }
-      }
+    if (data && isCloudDataDifferent(data)) {
+      applyCloudData(data);
     }
   } catch (err) {
     console.warn("Poll cloud update notice:", err);
