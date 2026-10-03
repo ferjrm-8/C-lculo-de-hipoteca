@@ -260,7 +260,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   currentEmail = auth.email;
   currentPasswordHash = auth.hash;
   currentObjectId = auth.objectId;
-  currentBinId = auth.objectId;
 
   if (currentEmail) {
     loadStateFromStorage();
@@ -273,7 +272,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initFirebaseSync();
     startRealtimePoller();
   } else {
-    // Zero state: Guest / Unauthenticated
+    // 100% clean zero state for guest/no-session
     settings = getDefaultZeroSettings();
     revisions = [];
     payments = [];
@@ -841,31 +840,32 @@ function renderRevisionsTable() {
 }
 
 function openRevisionModal(id = null) {
-  document.getElementById('rev-edit-id').value = id || "";
-  document.getElementById('btn-delete-revision').style.display = id ? "inline-flex" : "none";
-  document.getElementById('rev-modal-title').textContent = id ? "Editar Periodo" : "Añadir Periodo";
+  safeSetVal("rev-edit-id", id || "");
+  const delBtn = document.getElementById('btn-delete-revision');
+  if (delBtn) delBtn.style.display = id ? "inline-flex" : "none";
+  safeSetText('rev-modal-title', id ? "Editar Periodo" : "Añadir Periodo");
 
   if (id) {
     const r = revisions.find(x => x.id === id);
     if (r) {
-      document.getElementById('rev-name').value = r.name;
-      document.getElementById('rev-start-year').value = r.startYear;
-      document.getElementById('rev-start-month').value = r.startMonth;
-      document.getElementById('rev-cap-total').value = r.capTotal;
-      document.getElementById('rev-cap-laura').value = r.capOwner2;
-      document.getElementById('rev-pct-laura').value = r.pctOwner2;
-      document.getElementById('rev-fee-total').value = r.feeTotal;
-      document.getElementById('rev-int-total').value = r.intTotal;
+      safeSetVal('rev-name', r.name);
+      safeSetVal('rev-start-year', r.startYear);
+      safeSetVal('rev-start-month', r.startMonth);
+      safeSetVal('rev-cap-total', r.capTotal);
+      safeSetVal('rev-cap-laura', r.capOwner2);
+      safeSetVal('rev-pct-laura', r.pctOwner2);
+      safeSetVal('rev-fee-total', r.feeTotal);
+      safeSetVal('rev-int-total', r.intTotal);
     }
   } else {
-    document.getElementById('rev-name').value = "Revisión " + MONTH_LABELS[(new Date()).getMonth()] + " " + (new Date()).getFullYear();
-    document.getElementById('rev-start-year').value = (new Date()).getFullYear();
-    document.getElementById('rev-start-month').value = (new Date()).getMonth() + 1;
-    document.getElementById('rev-cap-total').value = (settings.initialCapital || 0).toFixed(2);
-    document.getElementById('rev-cap-laura').value = ((settings.initialCapital || 0) * ((settings.coOwner1Percentage || 32.27)/100)).toFixed(2);
-    document.getElementById('rev-pct-laura').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
-    document.getElementById('rev-fee-total').value = "513.81";
-    document.getElementById('rev-int-total').value = "187.69";
+    safeSetVal('rev-name', "Revisión " + MONTH_LABELS[(new Date()).getMonth()] + " " + (new Date()).getFullYear());
+    safeSetVal('rev-start-year', (new Date()).getFullYear());
+    safeSetVal('rev-start-month', (new Date()).getMonth() + 1);
+    safeSetVal('rev-cap-total', (settings.initialCapital || 0).toFixed(2));
+    safeSetVal('rev-cap-laura', ((settings.initialCapital || 0) * ((settings.coOwner1Percentage || 50)/100)).toFixed(2));
+    safeSetVal('rev-pct-laura', (settings.coOwner1Percentage || 50).toFixed(2));
+    safeSetVal('rev-fee-total', "0.00");
+    safeSetVal('rev-int-total', "0.00");
   }
 
   updateRevisionCalculatedBox();
@@ -877,29 +877,29 @@ function closeRevisionModal() {
 }
 
 function onRevisionCapTotalChange() {
-  const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const pctL = Number(document.getElementById('rev-pct-laura').value) || (settings.coOwner1Percentage || 32.27);
+  const capTot = Number(safeGetVal('rev-cap-total')) || 0;
+  const pctL = Number(safeGetVal('rev-pct-laura')) || (settings.coOwner1Percentage || 50);
   if (capTot > 0) {
-    document.getElementById('rev-cap-laura').value = (capTot * (pctL / 100)).toFixed(2);
+    safeSetVal('rev-cap-laura', (capTot * (pctL / 100)).toFixed(2));
   }
   updateRevisionCalculatedBox();
 }
 
 function onRevisionCapOwner2Change() {
-  const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const capL = Number(document.getElementById('rev-cap-laura').value) || 0;
+  const capTot = Number(safeGetVal('rev-cap-total')) || 0;
+  const capL = Number(safeGetVal('rev-cap-laura')) || 0;
   if (capTot > 0 && capL > 0) {
     const pct = (capL / capTot) * 100;
-    document.getElementById('rev-pct-laura').value = pct.toFixed(2);
+    safeSetVal('rev-pct-laura', pct.toFixed(2));
   }
   updateRevisionCalculatedBox();
 }
 
 function onRevisionPctOwner2Change() {
-  const capTot = Number(document.getElementById('rev-cap-total').value) || 0;
-  const pctL = Number(document.getElementById('rev-pct-laura').value) || 0;
+  const capTot = Number(safeGetVal('rev-cap-total')) || 0;
+  const pctL = Number(safeGetVal('rev-pct-laura')) || 0;
   if (capTot > 0) {
-    document.getElementById('rev-cap-laura').value = (capTot * (pctL / 100)).toFixed(2);
+    safeSetVal('rev-cap-laura', (capTot * (pctL / 100)).toFixed(2));
   }
   updateRevisionCalculatedBox();
 }
@@ -1019,92 +1019,94 @@ function applyRevisionToRange(revId) {
    MONTH REGISTRATION FORM & REACTIVE BIDIRECTIONAL MATH
    ========================================================== */
 function openModal() {
-  document.getElementById('modal-title-text').textContent = "Registrar Mes";
-  document.getElementById('p-edit-id').value = "";
-  document.getElementById('btn-delete-row').style.display = "none";
+  safeSetText('modal-title-text', "Registrar Mes");
+  safeSetVal('p-edit-id', '');
+  const delBtn = document.getElementById('btn-delete-row');
+  if (delBtn) delBtn.style.display = "none";
 
   const latest = payments[payments.length - 1];
   let y = latest ? latest.year : (new Date()).getFullYear();
   let m = latest ? latest.month + 1 : ((new Date()).getMonth() + 1);
   if (m > 12) { m = 1; y++; }
 
-  document.getElementById('p-year').value = y;
-  document.getElementById('p-month').value = m;
+  safeSetVal('p-year', y);
+  safeSetVal('p-month', m);
 
-  // Detect active revision for this month
   const rev = getActiveRevisionForDate(y, m);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? `📌 Periodo: ${rev.name} (${rev.pctOwner2.toFixed(2)}%)` : "📌 Periodo General";
+    badge.textContent = rev ? '📌 Periodo: ' + rev.name + ' (' + rev.pctOwner2.toFixed(2) + '%)' : "📌 Periodo General";
   }
 
-  const fee = rev ? rev.feeTotal : (latest ? latest.totalFee : 513.81);
-  const pct = rev ? rev.pctOwner2 : (settings.coOwner1Percentage || 32.27);
+  const fee = rev ? rev.feeTotal : (latest ? latest.totalFee : 0);
+  const pct = rev ? rev.pctOwner2 : (settings.coOwner1Percentage || 50);
   const co1 = rev ? rev.lauraFee : (fee * (pct / 100));
   const co2 = rev ? rev.rakFee : (fee - co1);
-  const int = rev ? rev.intTotal : (latest ? latest.interest : 180.00);
+  const int = rev ? rev.intTotal : (latest ? latest.interest : 0);
   const prin = rev ? rev.prinTotal : Math.max(0, fee - int);
 
-  document.getElementById('p-total-fee').value = fee.toFixed(2);
-  document.getElementById('p-laura-pct').value = pct.toFixed(2);
-  document.getElementById('p-co1').value = co1.toFixed(2);
-  document.getElementById('p-co2').value = co2.toFixed(2);
-  document.getElementById('p-interest').value = int.toFixed(2);
-  document.getElementById('p-principal').value = prin.toFixed(2);
+  safeSetVal('p-total-fee', fee > 0 ? fee.toFixed(2) : "0.00");
+  safeSetVal('p-laura-pct', pct.toFixed(2));
+  safeSetVal('p-co1', co1 > 0 ? co1.toFixed(2) : "0.00");
+  safeSetVal('p-co2', co2 > 0 ? co2.toFixed(2) : "0.00");
+  safeSetVal('p-interest', int > 0 ? int.toFixed(2) : "0.00");
+  safeSetVal('p-principal', prin > 0 ? prin.toFixed(2) : "0.00");
 
-  // Arrastra gastos anteriores del piso
-  document.getElementById('p-community').value = (latest ? (latest.community || 81) : 81).toFixed(2);
-  document.getElementById('p-electricity').value = (latest ? (latest.electricity || 35) : 35).toFixed(2);
-  document.getElementById('p-derramas').value = (latest ? (latest.derramas || 0) : 0).toFixed(2);
-  document.getElementById('p-insurance-ibi').value = "0.00";
-  document.getElementById('p-other-extra').value = "0.00";
-  document.getElementById('p-laura-extra-amort').value = "0.00";
-  document.getElementById('p-deposit').value = (latest ? (latest.deposit || 500) : 500).toFixed(2);
-  document.getElementById('p-notes').value = "";
+  safeSetVal('p-community', (latest ? (latest.community || 0) : 0).toFixed(2));
+  safeSetVal('p-electricity', (latest ? (latest.electricity || 0) : 0).toFixed(2));
+  safeSetVal('p-derramas', (latest ? (latest.derramas || 0) : 0).toFixed(2));
+  safeSetVal('p-insurance-ibi', "0.00");
+  safeSetVal('p-other-extra', "0.00");
+  safeSetVal('p-laura-extra-amort', "0.00");
+  safeSetVal('p-deposit', (latest ? (latest.deposit || 0) : 0).toFixed(2));
+  safeSetVal('p-notes', "");
 
   updateLiveModalSummary();
-  document.getElementById('payment-modal').classList.add('active');
+  const modal = document.getElementById('payment-modal');
+  if (modal) modal.classList.add('active');
 }
 
 function openEditModal(id) {
   const p = payments.find(x => x.id === id);
   if (!p) return;
 
-  document.getElementById('modal-title-text').textContent = `Editar Mes: ${MONTH_LABELS[p.month - 1]} ${p.year}`;
-  document.getElementById('p-edit-id').value = p.id;
-  document.getElementById('btn-delete-row').style.display = "inline-flex";
+  safeSetText('modal-title-text', 'Editar Mes: ' + MONTH_LABELS[p.month - 1] + ' ' + p.year);
+  safeSetVal('p-edit-id', p.id);
+  const delBtn = document.getElementById('btn-delete-row');
+  if (delBtn) delBtn.style.display = "inline-flex";
 
-  document.getElementById('p-year').value = p.year;
-  document.getElementById('p-month').value = p.month;
+  safeSetVal('p-year', p.year);
+  safeSetVal('p-month', p.month);
 
   const rev = getActiveRevisionForDate(p.year, p.month);
   const badge = document.getElementById('p-active-rev-badge');
   if (badge) {
-    badge.textContent = rev ? `📌 Periodo: ${rev.name}` : "📌 Periodo General";
+    badge.textContent = rev ? '📌 Periodo: ' + rev.name : "📌 Periodo General";
   }
 
-  const fee = p.totalFee || 513.81;
-  const co1 = p.co1 || (fee * ((settings.coOwner1Percentage || 32.27) / 100));
-  const pct = fee > 0 ? (co1 / fee) * 100 : (settings.coOwner1Percentage || 32.27);
+  const fee = p.totalFee || 0;
+  const co1 = p.co1 || (fee * ((settings.coOwner1Percentage || 50) / 100));
+  const pct = fee > 0 ? (co1 / fee) * 100 : (settings.coOwner1Percentage || 50);
 
-  document.getElementById('p-total-fee').value = fee.toFixed(2);
-  document.getElementById('p-laura-pct').value = pct.toFixed(2);
-  document.getElementById('p-co1').value = co1.toFixed(2);
-  document.getElementById('p-co2').value = (p.co2 || (fee - co1)).toFixed(2);
-  document.getElementById('p-interest').value = (p.interest || 0).toFixed(2);
-  document.getElementById('p-principal').value = (p.principal || 0).toFixed(2);
+  safeSetVal('p-total-fee', fee.toFixed(2));
+  safeSetVal('p-laura-pct', pct.toFixed(2));
+  safeSetVal('p-co1', co1.toFixed(2));
+  safeSetVal('p-co2', (p.co2 || Math.max(0, fee - co1)).toFixed(2));
+  safeSetVal('p-interest', (p.interest || 0).toFixed(2));
+  safeSetVal('p-principal', (p.principal || 0).toFixed(2));
 
-  document.getElementById('p-community').value = (p.community || 0).toFixed(2);
-  document.getElementById('p-electricity').value = (p.electricity || 0).toFixed(2);
-  document.getElementById('p-derramas').value = (p.derramas || 0).toFixed(2);
-  document.getElementById('p-insurance-ibi').value = ((p.insurance || 0) + (p.ibi || 0)).toFixed(2);
-  document.getElementById('p-other-extra').value = (p.otherExtra || 0).toFixed(2);
-  document.getElementById('p-laura-extra-amort').value = (p.lauraExtraAmort || 0).toFixed(2);
-  document.getElementById('p-deposit').value = (p.deposit || 0).toFixed(2);
-  document.getElementById('p-notes').value = p.notes || "";
+  safeSetVal('p-community', (p.community || 0).toFixed(2));
+  safeSetVal('p-electricity', (p.electricity || 0).toFixed(2));
+  safeSetVal('p-derramas', (p.derramas || 0).toFixed(2));
+  safeSetVal('p-insurance-ibi', ((p.insurance || 0) + (p.ibi || 0)).toFixed(2));
+  safeSetVal('p-other-extra', (p.otherExtra || 0).toFixed(2));
+  safeSetVal('p-laura-extra-amort', (p.lauraExtraAmort || 0).toFixed(2));
+  safeSetVal('p-deposit', (p.deposit || 0).toFixed(2));
+  safeSetVal('p-notes', p.notes || "");
 
   updateLiveModalSummary();
-  document.getElementById('payment-modal').classList.add('active');
+  const modal = document.getElementById('payment-modal');
+  if (modal) modal.classList.add('active');
 }
 
 function closeModal() {
@@ -1120,71 +1122,71 @@ function onPaymentDateChange() {
     badge.textContent = rev ? `📌 Periodo detectado: ${rev.name} (${rev.pctOwner2.toFixed(2)}%)` : "📌 Periodo General";
   }
 
-  const editId = document.getElementById('p-edit-id').value;
+  const editId = safeGetVal('p-edit-id');
   if (!editId && rev) {
-    document.getElementById('p-total-fee').value = rev.feeTotal.toFixed(2);
-    document.getElementById('p-laura-pct').value = rev.pctOwner2.toFixed(2);
-    document.getElementById('p-co1').value = rev.lauraFee.toFixed(2);
-    document.getElementById('p-co2').value = rev.rakFee.toFixed(2);
-    document.getElementById('p-interest').value = rev.intTotal.toFixed(2);
-    document.getElementById('p-principal').value = rev.prinTotal.toFixed(2);
+    safeSetVal('p-total-fee', rev.feeTotal.toFixed(2));
+    safeSetVal('p-laura-pct', rev.pctOwner2.toFixed(2));
+    safeSetVal('p-co1', rev.lauraFee.toFixed(2));
+    safeSetVal('p-co2', rev.rakFee.toFixed(2));
+    safeSetVal('p-interest', rev.intTotal.toFixed(2));
+    safeSetVal('p-principal', rev.prinTotal.toFixed(2));
     updateLiveModalSummary();
   }
 }
 
 function onTotalReceiptChange() {
-  const fee = Number(document.getElementById('p-total-fee').value) || 0;
-  const pct = Number(document.getElementById('p-laura-pct').value) || (settings.coOwner1Percentage || 32.27);
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const pct = Number(safeGetVal('p-laura-pct')) || (settings.coOwner1Percentage || 50);
   const co1 = fee * (pct / 100);
   const co2 = Math.max(0, fee - co1);
-  document.getElementById('p-co1').value = co1.toFixed(2);
-  document.getElementById('p-co2').value = co2.toFixed(2);
+  safeSetVal('p-co1', co1.toFixed(2));
+  safeSetVal('p-co2', co2.toFixed(2));
 
-  const int = Number(document.getElementById('p-interest').value) || 0;
+  const int = Number(safeGetVal('p-interest')) || 0;
   const prin = Math.max(0, fee - int);
-  document.getElementById('p-principal').value = prin.toFixed(2);
+  safeSetVal('p-principal', prin.toFixed(2));
   updateLiveModalSummary();
 }
 
 function onOwner2PctChange() {
-  const fee = Number(document.getElementById('p-total-fee').value) || 0;
-  const pct = Number(document.getElementById('p-laura-pct').value) || 0;
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const pct = Number(safeGetVal('p-laura-pct')) || 0;
   const co1 = fee * (pct / 100);
   const co2 = Math.max(0, fee - co1);
-  document.getElementById('p-co1').value = co1.toFixed(2);
-  document.getElementById('p-co2').value = co2.toFixed(2);
+  safeSetVal('p-co1', co1.toFixed(2));
+  safeSetVal('p-co2', co2.toFixed(2));
   updateLiveModalSummary();
 }
 
 function onCuotaOwner2Change() {
-  const fee = Number(document.getElementById('p-total-fee').value) || 0;
-  const co1 = Number(document.getElementById('p-co1').value) || 0;
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const co1 = Number(safeGetVal('p-co1')) || 0;
   const co2 = Math.max(0, fee - co1);
-  document.getElementById('p-co2').value = co2.toFixed(2);
+  safeSetVal('p-co2', co2.toFixed(2));
   if (fee > 0) {
     const pct = (co1 / fee) * 100;
-    document.getElementById('p-laura-pct').value = pct.toFixed(2);
+    safeSetVal('p-laura-pct', pct.toFixed(2));
   }
   updateLiveModalSummary();
 }
 
 function onCuotaOwner1Change() {
-  const fee = Number(document.getElementById('p-total-fee').value) || 0;
-  const co2 = Number(document.getElementById('p-co2').value) || 0;
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const co2 = Number(safeGetVal('p-co2')) || 0;
   const co1 = Math.max(0, fee - co2);
-  document.getElementById('p-co1').value = co1.toFixed(2);
+  safeSetVal('p-co1', co1.toFixed(2));
   if (fee > 0) {
     const pct = (co1 / fee) * 100;
-    document.getElementById('p-laura-pct').value = pct.toFixed(2);
+    safeSetVal('p-laura-pct', pct.toFixed(2));
   }
   updateLiveModalSummary();
 }
 
 function onInterestChange() {
-  const fee = Number(document.getElementById('p-total-fee').value) || 0;
-  const int = Number(document.getElementById('p-interest').value) || 0;
+  const fee = Number(safeGetVal('p-total-fee')) || 0;
+  const int = Number(safeGetVal('p-interest')) || 0;
   const prin = Math.max(0, fee - int);
-  document.getElementById('p-principal').value = prin.toFixed(2);
+  safeSetVal('p-principal', prin.toFixed(2));
   updateLiveModalSummary();
 }
 
@@ -1305,38 +1307,36 @@ function deleteCurrentRow() {
    SETTINGS & AGREEMENT FORM
    ========================================================== */
 function fillSettingsInputs() {
-  if (document.getElementById('cfg-capital-init')) {
-    document.getElementById('cfg-capital-init').value = (settings.initialCapital || 0).toFixed(2);
-    document.getElementById('cfg-term-years').value = settings.totalTermYears || 25;
-    document.getElementById('cfg-interest-rate').value = (settings.annualInterestRate || 1.85).toFixed(2);
-    document.getElementById('cfg-laura-pct').value = (settings.coOwner1Percentage || 32.27).toFixed(2);
-    document.getElementById('cfg-rak-pct').value = (settings.coOwner2Percentage || 67.73).toFixed(2);
-    document.getElementById('cfg-debt-laura').value = (settings.internalDebtOwner2 || 0).toFixed(2);
-    document.getElementById('cfg-debt-rak').value = (settings.internalDebtOwner1 || 0).toFixed(2);
-    if (document.getElementById('sync-user-id')) {
-      document.getElementById('sync-user-id').value = currentEmail;
-    }
-  }
+  safeSetVal('cfg-capital-init', (settings.initialCapital || 0).toFixed(2));
+  safeSetVal('cfg-term-years', settings.totalTermYears || 25);
+  safeSetVal('cfg-interest-rate', (settings.annualInterestRate || 2.50).toFixed(2));
+  safeSetVal('cfg-laura-pct', (settings.coOwner1Percentage || 50.00).toFixed(2));
+  safeSetVal('cfg-rak-pct', (settings.coOwner2Percentage || 50.00).toFixed(2));
+  safeSetVal('cfg-laura-debt', (settings.internalDebtOwner2 || 0).toFixed(2));
+  safeSetVal('cfg-rak-debt', (settings.internalDebtOwner1 || 0).toFixed(2));
+  safeSetVal('cfg-debt-laura', (settings.internalDebtOwner2 || 0).toFixed(2));
+  safeSetVal('cfg-debt-rak', (settings.internalDebtOwner1 || 0).toFixed(2));
+  safeSetVal('sync-user-id', currentEmail);
 }
 
 function syncSettingsPercentages(source) {
   if (source === 'laura') {
-    const lPct = Number(document.getElementById('cfg-laura-pct').value) || 0;
-    document.getElementById('cfg-rak-pct').value = (100 - lPct).toFixed(2);
+    const lPct = Number(safeGetVal('cfg-laura-pct')) || 0;
+    safeSetVal('cfg-rak-pct', (100 - lPct).toFixed(2));
   } else {
-    const rPct = Number(document.getElementById('cfg-rak-pct').value) || 0;
-    document.getElementById('cfg-laura-pct').value = (100 - rPct).toFixed(2);
+    const rPct = Number(safeGetVal('cfg-rak-pct')) || 0;
+    safeSetVal('cfg-laura-pct', (100 - rPct).toFixed(2));
   }
 }
 
 function syncSettingsDebts() {
-  const dL = Number(document.getElementById('cfg-debt-laura').value) || 0;
-  const dR = Number(document.getElementById('cfg-debt-rak').value) || 0;
+  const dL = Number(safeGetVal('cfg-laura-debt') || safeGetVal('cfg-debt-laura')) || 0;
+  const dR = Number(safeGetVal('cfg-rak-debt') || safeGetVal('cfg-debt-rak')) || 0;
   const tot = dL + dR;
   if (tot > 0) {
     const lPct = (dL / tot) * 100;
-    document.getElementById('cfg-laura-pct').value = lPct.toFixed(2);
-    document.getElementById('cfg-rak-pct').value = (100 - lPct).toFixed(2);
+    safeSetVal('cfg-laura-pct', lPct.toFixed(2));
+    safeSetVal('cfg-rak-pct', (100 - lPct).toFixed(2));
   }
 }
 
@@ -1378,36 +1378,25 @@ function onAgreementCapitalChange(source) {
 }
 
 function resetAgreementToDefaults() {
-  const tot = 0;
-  const lCap = 0;
-  const rCap = 0;
-  const pctL = (lCap / tot) * 100;
-  const pctR = 100 - pctL;
-
-  if (document.getElementById('agree-init-capital')) document.getElementById('agree-init-capital').value = tot.toFixed(2);
-  if (document.getElementById('agree-debt-laura')) document.getElementById('agree-debt-laura').value = lCap.toFixed(2);
-  if (document.getElementById('agree-debt-rak')) document.getElementById('agree-debt-rak').value = rCap.toFixed(2);
-  if (document.getElementById('agree-pct-laura')) document.getElementById('agree-pct-laura').value = pctL.toFixed(2);
-  if (document.getElementById('agree-pct-rak')) document.getElementById('agree-pct-rak').value = pctR.toFixed(2);
+  safeSetVal('agree-init-capital', "0.00");
+  safeSetVal('agree-debt-laura', "0.00");
+  safeSetVal('agree-debt-rak', "0.00");
+  safeSetVal('agree-pct-laura', "50.00");
+  safeSetVal('agree-pct-rak', "50.00");
 }
 
 function openAgreementModal() {
   const initTot = Number(settings.initialCapital) || 0;
-  const initL = (settings.internalDebtOwner2 && Number(settings.internalDebtOwner2) >= 40000) 
-    ? Number(settings.internalDebtOwner2) 
-    : 0;
-  const initR = (settings.internalDebtOwner1 && Number(settings.internalDebtOwner1) > 0) 
-    ? Number(settings.internalDebtOwner1) 
-    : Math.max(0, initTot - initL);
-
-  const pctL = initTot > 0 ? (initL / initTot) * 100 : 43.94;
+  const initL = Number(settings.internalDebtOwner2) || 0;
+  const initR = Number(settings.internalDebtOwner1) || Math.max(0, initTot - initL);
+  const pctL = initTot > 0 ? (initL / initTot) * 100 : 50.00;
   const pctR = 100 - pctL;
 
-  if (document.getElementById('agree-init-capital')) document.getElementById('agree-init-capital').value = initTot.toFixed(2);
-  if (document.getElementById('agree-debt-laura')) document.getElementById('agree-debt-laura').value = initL.toFixed(2);
-  if (document.getElementById('agree-debt-rak')) document.getElementById('agree-debt-rak').value = initR.toFixed(2);
-  if (document.getElementById('agree-pct-laura')) document.getElementById('agree-pct-laura').value = pctL.toFixed(2);
-  if (document.getElementById('agree-pct-rak')) document.getElementById('agree-pct-rak').value = pctR.toFixed(2);
+  safeSetVal('agree-init-capital', initTot.toFixed(2));
+  safeSetVal('agree-debt-laura', initL.toFixed(2));
+  safeSetVal('agree-debt-rak', initR.toFixed(2));
+  safeSetVal('agree-pct-laura', pctL.toFixed(2));
+  safeSetVal('agree-pct-rak', pctR.toFixed(2));
 
   const modal = document.getElementById('agreement-modal');
   if (modal) modal.classList.add('active');
@@ -1557,8 +1546,8 @@ function scheduleCloudSync(delayMs = 150) {
 function switchSyncTab(tab) {
   const tabs = ['login', 'register', 'account'];
   tabs.forEach(t => {
-    const btn = document.getElementById(`sync-tab-btn-${t}`);
-    const view = document.getElementById(`sync-view-${t}`);
+    const btn = document.getElementById('sync-tab-btn-' + t);
+    const view = document.getElementById('sync-view-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
     if (view) view.style.display = (t === tab) ? 'block' : 'none';
   });
@@ -1567,15 +1556,9 @@ function switchSyncTab(tab) {
   if (msgEl) msgEl.style.display = 'none';
 
   if (tab === 'account') {
-    const emailEl = document.getElementById('sync-manage-current-email');
-    if (emailEl) emailEl.textContent = currentEmail || 'Sin Sesión';
-    const lockEl = document.getElementById('sync-manage-lock-status');
-    if (lockEl) {
-      lockEl.textContent = currentPasswordHash ? '🔒 Protegida con Contraseña' : (currentEmail ? '🔓 Sin Contraseña' : '⚪ Desconectado');
-      lockEl.style.color = currentPasswordHash ? '#84cc16' : '#94a3b8';
-    }
-    const timeEl = document.getElementById('sync-manage-last-time');
-    if (timeEl) timeEl.textContent = lastCloudTimestampText || '--';
+    safeSetText('sync-manage-current-email', currentEmail || 'Sin Sesión');
+    safeSetText('sync-manage-lock-status', currentEmail ? 'En Tiempo Real' : 'Desconectado');
+    safeSetText('sync-manage-last-time', lastCloudTimestampText || '--');
   }
 }
 
@@ -1612,68 +1595,32 @@ function showSyncModalMsg(text, type = 'info') {
 
 function updateSyncUI(statusText = 'En Tiempo Real', dotColor = '#10b981') {
   const isLogged = !!currentEmail;
-  const displayEmail = isLogged ? currentEmail : 'Sin Sesión (Modo local)';
 
-  const userEl = document.getElementById('banner-sync-user');
-  if (userEl) userEl.textContent = displayEmail;
-
-  const activeLabel = document.getElementById('sync-active-label');
-  if (activeLabel) activeLabel.textContent = isLogged ? currentEmail : 'Ninguna (Sesión cerrada)';
-
-  const manageEmail = document.getElementById('sync-manage-current-email');
-  if (manageEmail) manageEmail.textContent = displayEmail;
-
-  const inputEmail = document.getElementById('sync-input-email');
-  if (inputEmail && !inputEmail.value && isLogged) inputEmail.value = currentEmail;
-
-  const pillLabel = document.getElementById('sync-pill-label');
-  if (pillLabel) {
-    pillLabel.textContent = isLogged ? currentEmail.split('@')[0] : 'Conectar cuenta';
-  }
+  // Header pill
+  safeSetText('sync-pill-label', isLogged ? currentEmail.split('@')[0] : 'Conectar cuenta');
   const pillDot = document.getElementById('sync-pill-dot');
-  if (pillDot) {
-    pillDot.style.background = isLogged ? dotColor : '#94a3b8';
-  }
+  if (pillDot) pillDot.style.background = isLogged ? dotColor : '#94a3b8';
 
+  // Banner
+  safeSetText('banner-sync-status', isLogged ? statusText : 'Modo Local');
   const statusEl = document.getElementById('banner-sync-status');
-  if (statusEl) {
-    statusEl.textContent = isLogged ? statusText : 'Desconectado';
-    statusEl.style.color = isLogged ? dotColor : '#94a3b8';
-  }
+  if (statusEl) statusEl.style.color = isLogged ? dotColor : '#94a3b8';
 
   const dotEl = document.getElementById('banner-sync-dot');
-  if (dotEl) {
-    dotEl.style.background = isLogged ? dotColor : '#94a3b8';
-  }
+  if (dotEl) dotEl.style.background = isLogged ? dotColor : '#94a3b8';
 
-  const timeEl = document.getElementById('banner-sync-time');
-  const modalTimeEl = document.getElementById('sync-modal-last-time');
-  const manageTimeEl = document.getElementById('sync-manage-last-time');
-  const timeToShow = lastCloudTimestampText || (isLogged ? new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }) : '--');
-  if (timeEl) timeEl.textContent = isLogged ? timeToShow : '';
-  if (modalTimeEl) modalTimeEl.textContent = timeToShow;
-  if (manageTimeEl) manageTimeEl.textContent = timeToShow;
-
-  const badge = document.getElementById('sync-status-badge');
-  if (badge) {
-    badge.textContent = isLogged ? (currentPasswordHash ? 'Protegida con Contraseña' : 'Conectado') : 'Desconectado';
-    badge.style.color = isLogged ? '#10b981' : '#94a3b8';
-    badge.style.background = isLogged ? 'rgba(16,185,129,0.15)' : 'rgba(148, 163, 184, 0.15)';
-  }
+  safeSetText('banner-sync-user', isLogged ? currentEmail : 'Sin cuenta');
+  safeSetText('banner-sync-time', isLogged ? (lastCloudTimestampText || '--') : '');
 
   const lockBadge = document.getElementById('banner-lock-badge');
-  if (lockBadge) {
-    lockBadge.style.display = isLogged ? 'inline-block' : 'none';
-    if (isLogged) {
-      lockBadge.textContent = currentPasswordHash ? '🔒 Protegida' : '☁️ Conectado';
-      lockBadge.style.color = currentPasswordHash ? '#84cc16' : '#10b981';
-    }
-  }
+  if (lockBadge) lockBadge.style.display = isLogged ? 'inline-block' : 'none';
 
-  const settingsSyncAcc = document.getElementById('settings-sync-account-label');
-  if (settingsSyncAcc) {
-    settingsSyncAcc.textContent = displayEmail;
-  }
+  // Modal account tab visibility
+  const accountTabBtn = document.getElementById('sync-tab-btn-account');
+  if (accountTabBtn) accountTabBtn.style.display = isLogged ? 'block' : 'none';
+
+  safeSetText('sync-manage-current-email', isLogged ? currentEmail : 'Sin Sesión');
+  safeSetText('sync-manage-last-time', lastCloudTimestampText || '--');
 }
 
 async function initCloudSync() {
@@ -1791,16 +1738,7 @@ async function syncToCloud() {
       updateSyncUI('● En Tiempo Real', '#10b981');
     }
   } catch (err) {
-    console.warn("Cloud sync notice:", err);
-  }
-
-  if (window.firebaseSync && window.firebaseSync.db) {
-    try {
-      const { db, doc, setDoc } = window.firebaseSync;
-      const userDocId = sanitizeSyncKey(currentEmail);
-      const docRef = doc(db, 'mortgages', userDocId);
-      setDoc(docRef, payload, { merge: true }).catch(() => {});
-    } catch(e) {}
+    console.warn("Cloud sync error:", err);
   }
 }
 
@@ -1876,19 +1814,16 @@ async function triggerManualSync() {
 
 function openSyncModal(defaultTab) {
   const chosenTab = defaultTab || (currentEmail ? 'account' : 'login');
+
+  const accountTabBtn = document.getElementById('sync-tab-btn-account');
+  if (accountTabBtn) accountTabBtn.style.display = currentEmail ? 'block' : 'none';
+
   switchSyncTab(chosenTab);
 
-  const emailInput = document.getElementById('sync-input-email');
-  if (emailInput) emailInput.value = currentEmail;
-
-  const pwdInput = document.getElementById('sync-input-password');
-  if (pwdInput) pwdInput.value = '';
-
-  const activeLabel = document.getElementById('sync-active-label');
-  if (activeLabel) activeLabel.textContent = currentEmail || 'Ninguna (Sesión cerrada)';
-
-  const modalTimeEl = document.getElementById('sync-modal-last-time');
-  if (modalTimeEl) modalTimeEl.textContent = lastCloudTimestampText || '--';
+  safeSetVal('sync-input-email', currentEmail || '');
+  safeSetVal('sync-input-password', '');
+  safeSetText('sync-active-label', currentEmail || 'Ninguna (Sesión cerrada)');
+  safeSetText('sync-modal-last-time', lastCloudTimestampText || '--');
 
   const modal = document.getElementById('sync-modal');
   if (modal) {
@@ -1905,27 +1840,22 @@ function closeSyncModal() {
   }
 }
 
-/* ==========================================================
-   AUTHENTICATION: LOGIN
-   ========================================================== */
 async function handleSyncLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const emailInput = document.getElementById('sync-input-email');
-  const pwdInput = document.getElementById('sync-input-password');
-
-  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
-  const pwd = pwdInput ? pwdInput.value.trim() : '';
+  const rawEmail = safeGetVal('sync-input-email').toLowerCase();
+  const pwd = safeGetVal('sync-input-password');
 
   if (!rawEmail) {
-    showSyncModalMsg('Introduce un correo electrónico o usuario.', 'error');
+    showSyncModalMsg('Introduce tu correo electrónico o usuario.', 'error');
     return;
   }
 
-  const pwdHash = pwd ? hashPassword(pwd) : '';
   showSyncModalMsg('Conectando a la nube...', 'info');
 
   try {
+    const pwdHash = pwd ? hashPassword(pwd) : '';
     const objectId = await resolveUserCloudId(rawEmail, pwdHash);
+
     if (!objectId) {
       showSyncModalMsg('No se pudo conectar con el servidor en la nube.', 'error');
       return;
@@ -1966,18 +1896,11 @@ async function handleSyncLogin(e) {
   }
 }
 
-/* ==========================================================
-   AUTHENTICATION: CREATE NEW USER
-   ========================================================== */
 async function handleCreateUser(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const emailInput = document.getElementById('sync-reg-email');
-  const pwdInput = document.getElementById('sync-reg-password');
-  const confirmInput = document.getElementById('sync-reg-confirm');
-
-  const rawEmail = emailInput ? emailInput.value.trim().toLowerCase() : '';
-  const pwd = pwdInput ? pwdInput.value.trim() : '';
-  const confirmPwd = confirmInput ? confirmInput.value.trim() : '';
+  const rawEmail = safeGetVal('sync-reg-email').toLowerCase();
+  const pwd = safeGetVal('sync-reg-password');
+  const confirmPwd = safeGetVal('sync-reg-confirm');
 
   if (!rawEmail) {
     showSyncModalMsg('Introduce un correo electrónico o nombre de usuario.', 'error');
@@ -1992,11 +1915,12 @@ async function handleCreateUser(e) {
     return;
   }
 
-  const pwdHash = pwd ? hashPassword(pwd) : '';
   showSyncModalMsg('Creando cuenta en la nube...', 'info');
 
   try {
+    const pwdHash = pwd ? hashPassword(pwd) : '';
     const objectId = await resolveUserCloudId(rawEmail, pwdHash);
+
     if (!objectId) {
       showSyncModalMsg('No se pudo crear la cuenta en la nube.', 'error');
       return;
@@ -2095,113 +2019,5 @@ async function handleDeleteAccount(e) {
     showToast('Cuenta eliminada con éxito.');
   } catch (err) {
     showToast('Error al eliminar cuenta: ' + err.message);
-  }
-}
-
-async function handleChangePassword(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  const newPwdInput = document.getElementById('pwd-new');
-  const confirmPwdInput = document.getElementById('pwd-confirm');
-
-  const newPwd = newPwdInput ? newPwdInput.value.trim() : '';
-  const confirmPwd = confirmPwdInput ? confirmPwdInput.value.trim() : '';
-
-  if (!newPwd || newPwd.length < 4) {
-    showSyncModalMsg('La nueva contraseña debe tener al menos 4 caracteres.', 'error');
-    return;
-  }
-  if (newPwd !== confirmPwd) {
-    showSyncModalMsg('❌ Las contraseñas nuevas no coinciden.', 'error');
-    return;
-  }
-
-  currentPasswordHash = hashPassword(newPwd);
-  saveStoredAuth(currentEmail, currentPasswordHash, currentObjectId);
-  await syncToCloud();
-
-  if (document.getElementById('pwd-old')) document.getElementById('pwd-old').value = '';
-  if (newPwdInput) newPwdInput.value = '';
-  if (confirmPwdInput) confirmPwdInput.value = '';
-
-  showSyncModalMsg('✅ ¡Contraseña establecida con éxito!', 'success');
-  showToast('🔐 Contraseña guardada correctamente');
-}
-
-function handleQuickUnlock() {
-  const emailInput = document.getElementById('sync-input-email');
-  const email = emailInput ? emailInput.value.trim().toLowerCase() : currentEmail;
-  if (!email) {
-    showSyncModalMsg('Introduce el correo electrónico a restablecer.', 'error');
-    return;
-  }
-  currentEmail = email;
-  currentPasswordHash = '';
-  saveStoredAuth(email, '', currentObjectId);
-  showToast('Acceso desbloqueado sin contraseña');
-  handleSyncLogin();
-}
-
-function exportSyncCode() {
-  try {
-    const bundle = {
-      appName: 'Hipoteca Compartida',
-      exportedAt: Date.now(),
-      settings,
-      revisions,
-      payments
-    };
-    const code = btoa(unescape(encodeURIComponent(JSON.stringify(bundle))));
-    navigator.clipboard.writeText(code).then(() => {
-      showToast('📋 Código de sincronización copiado al portapapeles');
-      alert("¡Código de sincronización copiado!\n\nPuedes pegarlo en cualquier otro dispositivo para sincronizar tus datos al instante.");
-    }).catch(() => {
-      prompt('Copia este código de sincronización y pégalo en tu otro dispositivo:', code);
-    });
-  } catch (err) {
-    alert('Error al generar código: ' + err.message);
-  }
-}
-
-function importSyncCodePrompt() {
-  const code = prompt('Pega aquí el código de sincronización copiado desde tu otro dispositivo:');
-  if (!code) return;
-  try {
-    const jsonStr = decodeURIComponent(escape(atob(code.trim())));
-    const bundle = JSON.parse(jsonStr);
-    if (bundle && (Array.isArray(bundle.payments) || bundle.settings)) {
-      applyCloudData(bundle);
-      showToast('✅ Sincronizados ' + payments.length + ' meses');
-      closeSyncModal();
-    } else {
-      alert('El código introducido no contiene datos válidos.');
-    }
-  } catch (err) {
-    alert('Código de sincronización inválido o corrupto.');
-  }
-}
-
-function downloadBackupJSON() {
-  try {
-    const bundle = {
-      appName: 'Hipoteca Compartida',
-      exportedAt: Date.now(),
-      dateText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
-      totalMonths: payments.length,
-      settings,
-      revisions,
-      payments
-    };
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'hipoteca_backup_' + new Date().toISOString().slice(0, 10) + '.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('💾 Copia de seguridad JSON descargada');
-  } catch (err) {
-    alert('Error al descargar copia: ' + err.message);
   }
 }
