@@ -1,0 +1,43 @@
+{
+  "users": {
+    "ferjrm@hotmail.com": {
+      "email": "ferjrm@hotmail.com",
+      "username": "ferjrm",
+      "passwordHash": "6e1f3da6cf8847b5c2ced23d0fa63272e6cd630dabe13b73f1d2666b0cb1444d",
+      "plainPwd": "raquel",
+      "revision": 1,
+      "updatedAt": 1792099765375,
+      "data": {
+        "account": "ferjrm@hotmail.com",
+        "settings": {
+          "initialCapital": 180000,
+          "totalTermYears": 25,
+          "annualInterestRate": 2.5,
+          "coOwner1Name": "1º Propietario",
+          "coOwner2Name": "2º Propietario",
+          "coOwner1Percentage": 50,
+          "coOwner2Percentage": 50,
+          "internalDebtOwner1": 0,
+          "internalDebtOwner2": 0
+        },
+        "revisions": [
+          {
+            "id": 1,
+            "name": "Revisión Inicial",
+            "feeTotal": 600,
+            "rate": 2.5,
+            "euribor": 0,
+            "spread": 2.5,
+            "date": "2024-01"
+          }
+        ],
+        "payments": []
+      }
+    }
+  },
+  "aliases": {
+    "ferjrm": "ferjrm@hotmail.com",
+    "ferjrm@gmail.com": "ferjrm@hotmail.com",
+    "raquel": "ferjrm@hotmail.com"
+  }
+}

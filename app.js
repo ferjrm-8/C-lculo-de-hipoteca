@@ -77,10 +77,6 @@ window.addEventListener('click', (e) => {
 /* ==========================================================
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
-const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
-const CANONICAL_USER_OBJECT_ID = 'ff808181a09d98f701a103d242b06f48';
-const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
-
 let currentObjectId = '';
 let currentEmail = '';
 let currentBinId = '';
@@ -88,10 +84,18 @@ let currentPasswordHash = '';
 let localLastSyncTime = 0;
 let realtimePollInterval = null;
 let isSyncingIncoming = false;
+let activeEventSource = null;
+
+function getApiBase() {
+  if (typeof window !== 'undefined' && window.location && window.location.protocol && window.location.protocol.startsWith('http')) {
+    return '';
+  }
+  return 'http://10.0.2.2:3000';
+}
 
 // Universal Cloud Fetch: Uses native Android OkHttp Bridge if inside Android APK, or window.fetch in Browser/Web
 async function cloudFetch(url, options = {}) {
-  let reqUrl = url;
+  let reqUrl = url.startsWith('/') ? (getApiBase() + url) : url;
   const method = (options.method || 'GET').toUpperCase();
   if (method === 'GET') {
     const sep = reqUrl.includes('?') ? '&' : '?';
@@ -364,105 +368,38 @@ function saveStoredAuth(email, hash, objectId) {
 }
 
 async function getMasterRegistry() {
-  // 1. Try local server endpoint if on web / http
-  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-    try {
-      const srvRes = await fetch('/api/registry?_t=' + Date.now());
-      if (srvRes && srvRes.ok) {
-        const data = await srvRes.json();
-        if (data && (Array.isArray(data.users) || (data.users && typeof data.users === 'object'))) {
-          return data;
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 2. Try restful-api.dev (also used by AndroidBridge in APK)
   try {
-    const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?_t=' + Date.now());
+    const res = await cloudFetch('/api/registry');
     if (res && res.ok) {
-      const obj = await res.json();
-      if (obj && obj.data && typeof obj.data === 'object') {
-        return obj.data;
+      const data = await res.json();
+      if (data && Array.isArray(data.users)) {
+        return data;
       }
     }
-  } catch(e) {
-    console.warn("Get Master Registry notice:", e);
-  }
+  } catch (e) {}
 
-  // 3. Resilient fallback containing the registered user
   return {
     users: [
-      { email: 'ferjrm@hotmail.com', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
-      { email: 'ferjrm', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
-      { email: 'ferjrm@gmail.com', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
-      { email: 'raquel', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' }
+      { email: 'ferjrm@hotmail.com', username: 'ferjrm', pwd: 'raquel' }
     ],
     updatedAt: Date.now()
   };
 }
 
 async function saveMasterRegistry(regData) {
-  try {
-    regData.updatedAt = Date.now();
-    const usersList = parseUsersList(regData.users);
-    const cleanData = {
-      users: usersList,
-      updatedAt: regData.updatedAt
-    };
-
-    const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'hipoteca_sync_registry_master',
-        data: cleanData
-      })
-    });
-    return res && res.ok;
-  } catch(e) {
-    console.warn("Save Master Registry notice:", e);
-    return false;
-  }
+  return true;
 }
 
 async function cloudFetchState(email) {
   const norm = normalizeUserEmail(email);
   if (!norm) return null;
 
-  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
-  if (!objId) {
-    const regData = await getMasterRegistry();
-    const userMatch = findUserInRegistry(regData, norm);
-    if (userMatch && userMatch.entry && userMatch.entry.objectId) {
-      objId = userMatch.entry.objectId;
-      try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
-    }
-  }
-  if (!objId) {
-    objId = CANONICAL_USER_OBJECT_ID;
-  }
-
-  // 1. Try local server endpoint if on web / http
-  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-    try {
-      const srvRes = await fetch('/api/user_data?id=' + objId + '&_t=' + Date.now());
-      if (srvRes && srvRes.ok) {
-        const data = await srvRes.json();
-        if (data && (data.settings || Array.isArray(data.payments) || Array.isArray(data.revisions))) {
-          return data;
-        }
-      }
-    } catch(e) {}
-  }
-
-  // 2. Try restful-api.dev (also used by AndroidBridge in APK)
   try {
-    const res = await cloudFetch(CLOUD_API_BASE + '/' + objId + '?_t=' + Date.now());
+    const res = await cloudFetch('/api/user_data?user=' + encodeURIComponent(norm));
     if (res && res.ok) {
-      const obj = await res.json();
-      if (obj && obj.data && typeof obj.data === 'object') {
-        return obj.data;
+      const data = await res.json();
+      if (data && (data.settings || Array.isArray(data.payments) || Array.isArray(data.revisions))) {
+        return data;
       }
     }
   } catch (err) {
@@ -516,41 +453,64 @@ async function cloudPushState(payload) {
     localStorage.setItem('hipoteca_backup_' + norm, payloadStr);
   } catch(e) {}
 
-  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm) || CANONICAL_USER_OBJECT_ID;
-
-  // 1. Send to local server endpoint if on web / http
-  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-    try {
-      fetch('/api/user_data?id=' + objId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
-    } catch(e) {}
+  try {
+    const res = await cloudFetch('/api/user_data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res && res.ok;
+  } catch (err) {
+    console.warn("Cloud push error:", err);
+    return false;
   }
-
-  // 2. Send to restful-api.dev (works for both web and AndroidBridge)
-  if (objId) {
-    try {
-      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'hipoteca_user_' + norm,
-          data: payload
-        })
-      });
-      return res && res.ok;
-    } catch (err) {
-      console.warn("Cloud push notice:", err);
-    }
-  }
-
-  return false;
 }
 
-function initRealtimeCloudStream(email) {
-  // Handled cleanly via background poller (startRealtimePoller) and tab visibility
+function initRealtimeCloudStream(user) {
+  if (!user) return;
+  const norm = normalizeUserEmail(user);
+
+  if (activeEventSource) {
+    try { activeEventSource.close(); } catch(e) {}
+    activeEventSource = null;
+  }
+
+  if (typeof EventSource === 'undefined') {
+    startRealtimePoller();
+    return;
+  }
+
+  const streamUrl = getApiBase() + '/api/events?user=' + encodeURIComponent(norm);
+
+  try {
+    activeEventSource = new EventSource(streamUrl);
+
+    activeEventSource.addEventListener('state_updated', (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload && payload.data && !isSyncingIncoming) {
+          console.log('[Live SSE] Received instant state update from another session:', payload.revision);
+          isSyncingIncoming = true;
+          applyCloudData(payload.data);
+          recomputeBalances();
+          updateDashboardUI();
+          renderHistoryTable();
+          renderRevisionsTable();
+          isSyncingIncoming = false;
+          showToast(`🔄 Sincronizado en tiempo real (Revisión #${payload.revision || 'nueva'})`);
+          updateSyncUI('● En Tiempo Real', '#10b981');
+        }
+      } catch (err) {
+        console.warn('Error processing SSE live update:', err);
+      }
+    });
+
+    activeEventSource.onerror = () => {
+      startRealtimePoller();
+    };
+  } catch(e) {
+    startRealtimePoller();
+  }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -2287,50 +2247,32 @@ async function handleSyncLogin(e) {
   showSyncModalMsg('Verificando cuenta en la nube...', 'info');
 
   try {
-    // 1. Fetch master registry
-    const regData = await getMasterRegistry();
-    const userMatch = findUserInRegistry(regData, rawEmail);
+    const res = await cloudFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: rawEmail, password: pwd })
+    });
 
-    if (!userMatch || !userMatch.entry || !userMatch.entry.objectId) {
-      const usersList = parseUsersList(regData ? regData.users : null);
-      const names = usersList.map(u => u.email).filter(Boolean).join(', ');
-      const suggestionMsg = names ? ` Cuentas disponibles en la nube: ${names}.` : '';
-      showSyncModalMsg(`❌ No se encontró la cuenta "${rawEmail}".${suggestionMsg} Pulsa en "Usar esta cuenta" o crea una en "Crear Cuenta".`, 'error');
+    if (!res) {
+      showSyncModalMsg('❌ Error de conexión con el servidor en la nube.', 'error');
       return;
     }
 
-    const userEntry = userMatch.entry;
-    const activeAccountKey = userMatch.key;
-    const targetObjId = userEntry.objectId || CANONICAL_USER_OBJECT_ID;
-    const storedPwd = userEntry.passwordHash || userEntry.pwd || '';
-
-    // 2. Validate password if set
-    if (storedPwd) {
-      if (!pwd) {
-        showSyncModalMsg('❌ Introduce tu contraseña.', 'error');
-        return;
-      }
-      if (!isPasswordMatch(pwd, storedPwd)) {
-        showSyncModalMsg('❌ Contraseña incorrecta. Si la has olvidado, pulsa en "🔄 Restablecer" para cambiarla al instante.', 'error');
-        return;
-      }
-    }
-
-    // 3. Fetch user state object from cloud (tries server proxy first, then restful-api.dev)
-    const cloudData = await cloudFetchState(activeAccountKey);
-    if (!cloudData) {
-      showSyncModalMsg('❌ Error al obtener los datos de la cuenta desde la nube.', 'error');
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      showSyncModalMsg(result.error || '❌ Error al iniciar sesión en la nube', 'error');
       return;
     }
 
-    const pwdHash = pwd ? hashPassword(pwd) : storedPwd;
-    currentEmail = activeAccountKey;
-    currentPasswordHash = pwdHash;
-    currentObjectId = targetObjId;
-    saveStoredAuth(activeAccountKey, pwdHash, targetObjId);
-    try { localStorage.setItem('cached_cloud_id_' + activeAccountKey, targetObjId); } catch(e) {}
+    const activeUser = result.user || rawEmail;
+    currentEmail = activeUser;
+    currentPasswordHash = pwd ? hashPassword(pwd) : '';
+    currentObjectId = activeUser;
+    saveStoredAuth(activeUser, currentPasswordHash, currentObjectId);
 
-    applyCloudData(cloudData);
+    if (result.data) {
+      applyCloudData(result.data);
+    }
 
     recomputeBalances();
     updateDashboardUI();
@@ -2341,6 +2283,7 @@ async function handleSyncLogin(e) {
     switchTab('dashboard');
     showToast(`Sesión iniciada: ${revisions.length} revisiones, ${payments.length} meses`);
 
+    initRealtimeCloudStream(currentEmail);
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al conectar: ' + (err.message || err), 'error');
@@ -2366,37 +2309,20 @@ async function handleCreateUser(e) {
     return;
   }
 
-  const norm = normalizeUserEmail(rawEmail);
-  const pwdHash = pwd ? hashPassword(pwd) : '';
-
   showSyncModalMsg('Registrando cuenta en la nube...', 'info');
 
   try {
-    // 1. Fetch master registry
-    const regData = await getMasterRegistry();
-
-    // 2. Check if user already exists
-    const existing = findUserInRegistry(regData, rawEmail);
-    if (existing) {
-      showSyncModalMsg('⚠️ Esta cuenta ya existe en la nube. Ve a "Iniciar Sesión" para entrar, o a "Restablecer" si no recuerdas tu contraseña.', 'warning');
-      return;
-    }
-
-    // 3. Create new cloud document for user
     const defaultSettings = (settings && settings.initialCapital > 0) ? settings : getDefaultZeroSettings();
     const defaultRevisions = Array.isArray(revisions) ? revisions : [];
     const defaultPayments = Array.isArray(payments) ? payments : [];
 
-    const createRes = await cloudFetch(CLOUD_API_BASE, {
+    const res = await cloudFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'hipoteca_user_' + norm,
-        data: {
-          account: norm,
-          passwordHash: pwdHash,
-          updatedAt: Date.now(),
-          lastUpdatedText: new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+        email: rawEmail,
+        password: pwd,
+        initialData: {
           settings: defaultSettings,
           revisions: defaultRevisions,
           payments: defaultPayments
@@ -2404,47 +2330,26 @@ async function handleCreateUser(e) {
       })
     });
 
-    if (!createRes || !createRes.ok) {
-      showSyncModalMsg('❌ No se pudo conectar con la nube. Comprueba tu conexión a Internet e inténtalo de nuevo.', 'error');
+    if (!res) {
+      showSyncModalMsg('❌ Error de conexión con el servidor en la nube.', 'error');
       return;
     }
 
-    let newObjId = '';
-    try {
-      const createObj = await createRes.json();
-      newObjId = createObj ? createObj.id : '';
-    } catch (e) {}
-
-    if (!newObjId) {
-      showSyncModalMsg('❌ Error al generar el registro en la nube. Inténtalo de nuevo.', 'error');
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      showSyncModalMsg(result.error || '❌ Error al crear cuenta en la nube', 'error');
       return;
     }
 
-    // 4. Save to Master Registry with aliases
-    const usersList = parseUsersList(regData.users);
-    const entryData = {
-      email: norm,
-      objectId: newObjId,
-      pwd: pwd,
-      passwordHash: pwdHash,
-      createdAt: Date.now()
-    };
-    usersList.push(entryData);
-    if (norm.includes('@')) {
-      const u = norm.split('@')[0];
-      if (!usersList.some(item => item.email === u)) {
-        usersList.push({ email: u, objectId: newObjId, pwd: pwd, passwordHash: pwdHash });
-      }
-    }
-    regData.users = usersList;
-    await saveMasterRegistry(regData);
+    const activeUser = result.user || rawEmail;
+    currentEmail = activeUser;
+    currentPasswordHash = pwd ? hashPassword(pwd) : '';
+    currentObjectId = activeUser;
+    saveStoredAuth(activeUser, currentPasswordHash, currentObjectId);
 
-    // 5. Update session variables
-    currentEmail = norm;
-    currentPasswordHash = pwdHash;
-    currentObjectId = newObjId;
-    saveStoredAuth(norm, pwdHash, newObjId);
-    try { localStorage.setItem('cached_cloud_id_' + norm, newObjId); } catch(e) {}
+    if (result.data) {
+      applyCloudData(result.data);
+    }
 
     recomputeBalances();
     updateDashboardUI();
@@ -2453,11 +2358,12 @@ async function handleCreateUser(e) {
     updateSyncUI('● En Tiempo Real', '#10b981');
     closeSyncModal();
     switchTab('dashboard');
-    showToast('Cuenta creada y sincronizada: ' + norm);
+    showToast('Cuenta única creada y sincronizada: ' + activeUser);
 
+    initRealtimeCloudStream(currentEmail);
     startRealtimePoller();
   } catch (err) {
-    showSyncModalMsg('Error al crear cuenta: ' + err.message, 'error');
+    showSyncModalMsg('Error al crear cuenta: ' + (err.message || err), 'error');
   }
 }
 
@@ -2480,92 +2386,33 @@ async function handleResetPassword(e) {
     return;
   }
 
-  const norm = normalizeUserEmail(rawEmail);
-  const newHash = hashPassword(newPwd);
-
-  showSyncModalMsg('Verificando cuenta y actualizando contraseña en la nube...', 'info');
+  showSyncModalMsg('Actualizando contraseña en la nube...', 'info');
 
   try {
-    const regData = await getMasterRegistry();
-    const userMatch = findUserInRegistry(regData, rawEmail);
+    const res = await cloudFetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: rawEmail,
+        newPassword: newPwd
+      })
+    });
 
-    if (!userMatch || !userMatch.entry || !userMatch.entry.objectId) {
-      showSyncModalMsg('❌ No se encontró ninguna cuenta registrada para "' + rawEmail + '". Puedes crearla en "Crear Cuenta".', 'error');
+    if (!res) {
+      showSyncModalMsg('❌ Error de conexión con el servidor.', 'error');
       return;
     }
 
-    const targetObjId = userMatch.entry.objectId;
-    const activeAccountKey = userMatch.key;
-
-    // 1. Update Master Registry with new password
-    if (regData.users) {
-      if (Array.isArray(regData.users)) {
-        regData.users.forEach(u => {
-          if (u && (u.objectId === targetObjId || u.email === activeAccountKey)) {
-            u.pwd = newPwd;
-            u.passwordHash = newHash;
-          }
-        });
-      } else {
-        for (const [k, v] of Object.entries(regData.users)) {
-          if (v && v.objectId === targetObjId) {
-            v.passwordHash = newHash;
-            v.updatedAt = Date.now();
-          }
-        }
-      }
-    }
-    await saveMasterRegistry(regData);
-
-    // 2. Update cloud document with new hash
-    try {
-      const cloudRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
-      if (cloudRes && cloudRes.ok) {
-        const cloudObj = await cloudRes.json();
-        const cloudData = cloudObj ? cloudObj.data : null;
-        if (cloudData) {
-          cloudData.passwordHash = newHash;
-          cloudData.updatedAt = Date.now();
-          await cloudFetch(CLOUD_API_BASE + '/' + targetObjId, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: 'hipoteca_user_' + activeAccountKey,
-              data: cloudData
-            })
-          });
-        }
-      }
-    } catch (updateErr) {
-      console.warn("Could not sync new password to document:", updateErr);
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      showSyncModalMsg(result.error || '❌ Error al actualizar contraseña', 'error');
+      return;
     }
 
-    // 3. Save stored auth locally and activate session
-    currentEmail = activeAccountKey;
-    currentPasswordHash = newHash;
-    currentObjectId = targetObjId;
-    saveStoredAuth(activeAccountKey, newHash, targetObjId);
-    try { localStorage.setItem('cached_cloud_id_' + activeAccountKey, targetObjId); } catch(e) {}
-
-    // 4. Download and apply user cloud data
-    const fetchRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
-    if (fetchRes && fetchRes.ok) {
-      const obj = await fetchRes.json();
-      if (obj && obj.data) {
-        applyCloudData(obj.data);
-      }
-    }
-
-    recomputeBalances();
-    updateDashboardUI();
-    renderHistoryTable();
-    renderRevisionsTable();
-    updateSyncUI('● En Tiempo Real', '#10b981');
-    closeSyncModal();
-    switchTab('dashboard');
-    showToast('¡Contraseña restablecida correctamente! Sesión iniciada como ' + activeAccountKey);
-
-    startRealtimePoller();
+    showToast('Contraseña restablecida con éxito');
+    safeSetVal('sync-input-email', rawEmail);
+    safeSetVal('sync-input-password', newPwd);
+    await handleSyncLogin();
   } catch (err) {
     showSyncModalMsg('Error al restablecer contraseña: ' + (err.message || err), 'error');
   }
@@ -2573,6 +2420,10 @@ async function handleResetPassword(e) {
 
 async function handleLogout(e) {
   if (e && e.preventDefault) e.preventDefault();
+  if (activeEventSource) {
+    try { activeEventSource.close(); } catch(e) {}
+    activeEventSource = null;
+  }
   if (realtimePollInterval) {
     clearInterval(realtimePollInterval);
     realtimePollInterval = null;
@@ -2611,22 +2462,22 @@ async function handleDeleteAccount(e) {
   showSyncModalMsg('Eliminando cuenta de la nube...', 'info');
 
   try {
+    await cloudFetch('/api/auth/delete-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: currentEmail })
+    });
+
+    if (activeEventSource) {
+      try { activeEventSource.close(); } catch(e) {}
+      activeEventSource = null;
+    }
+    if (realtimePollInterval) {
+      clearInterval(realtimePollInterval);
+      realtimePollInterval = null;
+    }
+
     const norm = normalizeUserEmail(currentEmail);
-    const targetObjId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
-
-    // 1. HTTP DELETE object from restful-api.dev
-    if (targetObjId) {
-      await cloudFetch(CLOUD_API_BASE + '/' + targetObjId, { method: 'DELETE' }).catch(() => {});
-    }
-
-    // 2. Remove user from Master Registry
-    const regData = await getMasterRegistry();
-    if (regData.users && regData.users[norm]) {
-      delete regData.users[norm];
-      await saveMasterRegistry(regData);
-    }
-
-    // 3. Clear all local storage keys
     try {
       localStorage.removeItem('hipoteca_user_' + norm);
       localStorage.removeItem('hipoteca_backup_' + norm);
@@ -2636,14 +2487,10 @@ async function handleDeleteAccount(e) {
       localStorage.removeItem('mortgage_auth_cloud_id');
     } catch(e) {}
 
-    // 4. Reset session and local data
-    if (realtimePollInterval) {
-      clearInterval(realtimePollInterval);
-      realtimePollInterval = null;
-    }
     currentEmail = '';
     currentPasswordHash = '';
     currentObjectId = '';
+    saveStoredAuth('', '', '');
 
     settings = getDefaultZeroSettings();
     revisions = [];

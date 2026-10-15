@@ -1,0 +1,11 @@
+{
+  "name": "hipoteca-conjunta-web",
+  "version": "1.0.0",
+  "description": "Calculadora y gestor de hipotecas compartidas en tiempo real",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {}
+}
