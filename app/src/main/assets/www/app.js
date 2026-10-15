@@ -235,6 +235,23 @@ function hashPassword(pwd) {
   return result;
 }
 
+function isPasswordMatch(inputPwd, storedHashOrPlain) {
+  if (!storedHashOrPlain) return true;
+  if (!inputPwd) return false;
+  const trimmed = String(inputPwd).trim();
+  const stored = String(storedHashOrPlain).trim();
+
+  // 1. Matches SHA-256 hash (exact and lowercase)
+  const hash = hashPassword(trimmed);
+  const hashLower = hashPassword(trimmed.toLowerCase());
+  if (hash === stored || hashLower === stored) return true;
+
+  // 2. Matches stored plain text directly (in case stored unhashed or legacy)
+  if (trimmed === stored || trimmed.toLowerCase() === stored.toLowerCase()) return true;
+
+  return false;
+}
+
 function getStoredAuth() {
   try {
     const rawEmail = localStorage.getItem('mortgage_auth_email');
@@ -1845,7 +1862,7 @@ function scheduleCloudSync(delayMs = 150) {
 }
 
 function switchSyncTab(tab) {
-  const tabs = ['login', 'register', 'account'];
+  const tabs = ['login', 'register', 'reset', 'account'];
   tabs.forEach(t => {
     const btn = document.getElementById('sync-tab-btn-' + t);
     const view = document.getElementById('sync-view-' + t);
@@ -1855,6 +1872,13 @@ function switchSyncTab(tab) {
 
   const msgEl = document.getElementById('sync-modal-msg');
   if (msgEl) msgEl.style.display = 'none';
+
+  if (tab === 'reset') {
+    const currentInput = safeGetVal('sync-input-email') || safeGetVal('sync-reg-email') || currentEmail || '';
+    if (currentInput) safeSetVal('sync-reset-email', currentInput);
+    safeSetVal('sync-reset-password', '');
+    safeSetVal('sync-reset-confirm', '');
+  }
 
   if (tab === 'account') {
     safeSetText('sync-manage-current-email', currentEmail || 'Sin Sesión');
@@ -2122,7 +2146,6 @@ async function handleSyncLogin(e) {
   }
 
   const norm = normalizeUserEmail(rawEmail);
-  const pwdHash = pwd ? hashPassword(pwd) : '';
 
   showSyncModalMsg('Verificando cuenta en la nube...', 'info');
 
@@ -2142,9 +2165,16 @@ async function handleSyncLogin(e) {
         showSyncModalMsg('❌ Introduce tu contraseña.', 'error');
         return;
       }
-      if (pwdHash !== userEntry.passwordHash && hashPassword(pwd.toLowerCase()) !== userEntry.passwordHash) {
-        showSyncModalMsg('❌ Contraseña incorrecta.', 'error');
+      if (!isPasswordMatch(pwd, userEntry.passwordHash)) {
+        showSyncModalMsg('❌ Contraseña incorrecta. Si la has olvidado, pulsa "¿Olvidaste tu contraseña?" para restablecerla al instante.', 'error');
         return;
+      }
+
+      // If stored plainly or case-different, upgrade to canonical SHA-256 hash
+      const canonicalHash = hashPassword(pwd);
+      if (userEntry.passwordHash !== canonicalHash) {
+        userEntry.passwordHash = canonicalHash;
+        saveMasterRegistry(regData).catch(() => {});
       }
     }
 
@@ -2160,6 +2190,7 @@ async function handleSyncLogin(e) {
     const cloudObj = await cloudRes.json();
     const cloudData = cloudObj ? cloudObj.data : null;
 
+    const pwdHash = pwd ? hashPassword(pwd) : (userEntry.passwordHash || '');
     currentEmail = norm;
     currentPasswordHash = pwdHash;
     currentObjectId = targetObjId;
@@ -2215,7 +2246,7 @@ async function handleCreateUser(e) {
 
     // 2. Check if user already exists
     if (regData.users && regData.users[norm]) {
-      showSyncModalMsg('Esta cuenta ya existe en la nube. Ve a la pestaña "Iniciar Sesión".', 'error');
+      showSyncModalMsg('⚠️ Esta cuenta ya existe en la nube. Ve a "Iniciar Sesión" para entrar, o a "Restablecer" si no recuerdas tu contraseña.', 'warning');
       return;
     }
 
@@ -2285,6 +2316,100 @@ async function handleCreateUser(e) {
     startRealtimePoller();
   } catch (err) {
     showSyncModalMsg('Error al crear cuenta: ' + err.message, 'error');
+  }
+}
+
+async function handleResetPassword(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const rawEmail = safeGetVal('sync-reset-email').trim();
+  const newPwd = safeGetVal('sync-reset-password').trim();
+  const confirmPwd = safeGetVal('sync-reset-confirm').trim();
+
+  if (!rawEmail) {
+    showSyncModalMsg('Introduce el correo electrónico o usuario de la cuenta.', 'error');
+    return;
+  }
+  if (!newPwd || newPwd.length < 4) {
+    showSyncModalMsg('La nueva contraseña debe tener al menos 4 caracteres.', 'error');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    showSyncModalMsg('Las nuevas contraseñas no coinciden.', 'error');
+    return;
+  }
+
+  const norm = normalizeUserEmail(rawEmail);
+  const newHash = hashPassword(newPwd);
+
+  showSyncModalMsg('Verificando cuenta y actualizando contraseña en la nube...', 'info');
+
+  try {
+    const regData = await getMasterRegistry();
+    const userEntry = regData.users ? regData.users[norm] : null;
+
+    if (!userEntry || !userEntry.objectId) {
+      showSyncModalMsg('❌ No se encontró ninguna cuenta registrada para "' + norm + '". Puedes crearla en "Crear Cuenta".', 'error');
+      return;
+    }
+
+    const targetObjId = userEntry.objectId;
+
+    // 1. Update Master Registry with new hash
+    userEntry.passwordHash = newHash;
+    userEntry.updatedAt = Date.now();
+    await saveMasterRegistry(regData);
+
+    // 2. Update cloud document with new hash
+    try {
+      const cloudRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
+      if (cloudRes && cloudRes.ok) {
+        const cloudObj = await cloudRes.json();
+        const cloudData = cloudObj ? cloudObj.data : null;
+        if (cloudData) {
+          cloudData.passwordHash = newHash;
+          cloudData.updatedAt = Date.now();
+          await cloudFetch(CLOUD_API_BASE + '/' + targetObjId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: 'hipoteca_user_' + norm,
+              data: cloudData
+            })
+          });
+        }
+      }
+    } catch (updateErr) {
+      console.warn("Could not sync new password to document:", updateErr);
+    }
+
+    // 3. Save stored auth locally and activate session
+    currentEmail = norm;
+    currentPasswordHash = newHash;
+    currentObjectId = targetObjId;
+    saveStoredAuth(norm, newHash, targetObjId);
+    try { localStorage.setItem('cached_cloud_id_' + norm, targetObjId); } catch(e) {}
+
+    // 4. Download and apply user cloud data
+    const fetchRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
+    if (fetchRes && fetchRes.ok) {
+      const obj = await fetchRes.json();
+      if (obj && obj.data) {
+        applyCloudData(obj.data);
+      }
+    }
+
+    recomputeBalances();
+    updateDashboardUI();
+    renderHistoryTable();
+    renderRevisionsTable();
+    updateSyncUI('● En Tiempo Real', '#10b981');
+    closeSyncModal();
+    switchTab('dashboard');
+    showToast('¡Contraseña restablecida correctamente! Sesión iniciada como ' + norm);
+
+    startRealtimePoller();
+  } catch (err) {
+    showSyncModalMsg('Error al restablecer contraseña: ' + (err.message || err), 'error');
   }
 }
 
