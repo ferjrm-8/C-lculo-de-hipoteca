@@ -40,7 +40,8 @@ class AndroidNetworkBridge {
     fun httpRequest(url: String, method: String, headersJson: String, body: String?): String {
         return try {
             val future = executor.submit(java.util.concurrent.Callable {
-                val reqBuilder = Request.Builder().url(url)
+                val resolvedUrl = if (url.startsWith("/")) "http://10.0.2.2:3000$url" else url
+                val reqBuilder = Request.Builder().url(resolvedUrl)
 
                 if (headersJson.isNotEmpty() && headersJson != "{}") {
                     try {

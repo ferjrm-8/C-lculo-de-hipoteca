@@ -78,6 +78,7 @@ window.addEventListener('click', (e) => {
    SECURE MULTI-DEVICE CLOUD REALTIME SYNCHRONIZATION
    ========================================================== */
 const MASTER_REGISTRY_ID = 'ff808181a09d98f701a100b1b6ea69d1';
+const CANONICAL_USER_OBJECT_ID = 'ff808181a09d98f701a103d242b06f48';
 const CLOUD_API_BASE = 'https://api.restful-api.dev/objects';
 
 let currentObjectId = '';
@@ -99,6 +100,7 @@ async function cloudFetch(url, options = {}) {
     }
   }
 
+  // 1. Android Native OkHttp Bridge
   if (window.AndroidBridge && typeof window.AndroidBridge.httpRequest === 'function') {
     try {
       const headersJson = options.headers ? JSON.stringify(options.headers) : '{}';
@@ -125,11 +127,14 @@ async function cloudFetch(url, options = {}) {
     }
   }
 
+  // 2. Browser standard fetch
   try {
     const defaultHeaders = {
-      'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
+    if (method !== 'GET') {
+      defaultHeaders['Content-Type'] = 'application/json';
+    }
     const reqOptions = {
       ...options,
       headers: { ...defaultHeaders, ...(options.headers || {}) }
@@ -147,43 +152,82 @@ function normalizeUserEmail(rawEmail) {
   return String(rawEmail).trim().toLowerCase();
 }
 
-function findUserInRegistry(regData, rawInput) {
-  if (!regData || !regData.users || !rawInput) return null;
-  const input = String(rawInput).trim().toLowerCase();
-  const users = regData.users;
+function parseUsersList(usersData) {
+  if (!usersData) return [];
+  if (Array.isArray(usersData)) {
+    return usersData.filter(u => u && (u.email || u.objectId));
+  }
+  if (typeof usersData === 'object') {
+    return Object.entries(usersData).map(([k, v]) => {
+      if (typeof v === 'string') return { email: k, objectId: v };
+      return { email: k, ...(v || {}) };
+    });
+  }
+  return [];
+}
 
-  // 1. Exact match (e.g., "ferjrm", "ferjrm@gmail.com", "ferjrm@hotmail.com")
-  if (users[input] && users[input].objectId) {
-    return { key: input, entry: users[input] };
+function findUserInRegistry(regData, rawInput) {
+  if (!regData || !rawInput) return null;
+  const input = String(rawInput).trim().toLowerCase();
+  if (!input) return null;
+
+  const users = parseUsersList(regData.users);
+
+  // 1. Exact match
+  let match = users.find(u => u && u.email && u.email.toLowerCase() === input);
+  if (match) return { key: match.email, entry: match };
+
+  // 2. Match without domain (e.g. "ferjrm" matches "ferjrm@hotmail.com" or "ferjrm@gmail.com")
+  const inputNoDomain = input.split('@')[0];
+  match = users.find(u => {
+    if (!u || !u.email) return false;
+    const uEmail = u.email.toLowerCase();
+    const uNoDomain = uEmail.split('@')[0];
+    return uEmail === input || uNoDomain === input || uNoDomain === inputNoDomain;
+  });
+  if (match) return { key: match.email, entry: match };
+
+  // 3. Known aliases check (ferjrm, raquel, rak, laura)
+  const aliasKeywords = ['fer', 'rak', 'laura'];
+  const matchesKeyword = aliasKeywords.some(kw => input.includes(kw));
+  if (matchesKeyword) {
+    match = users.find(u => u && u.objectId);
+    if (match) return { key: match.email, entry: match };
   }
 
-  // 2. If input has no '@', try matching standard email suffixes or username part
-  if (!input.includes('@')) {
-    if (users[input + '@gmail.com'] && users[input + '@gmail.com'].objectId) {
-      return { key: input + '@gmail.com', entry: users[input + '@gmail.com'] };
-    }
-    if (users[input + '@hotmail.com'] && users[input + '@hotmail.com'].objectId) {
-      return { key: input + '@hotmail.com', entry: users[input + '@hotmail.com'] };
-    }
-    for (const [k, v] of Object.entries(users)) {
-      if (v && v.objectId && k.split('@')[0].toLowerCase() === input) {
-        return { key: k, entry: v };
-      }
-    }
-  } else {
-    // 3. If input has '@', try matching username part before '@'
-    const uname = input.split('@')[0].toLowerCase();
-    if (users[uname] && users[uname].objectId) {
-      return { key: uname, entry: users[uname] };
-    }
-    for (const [k, v] of Object.entries(users)) {
-      if (v && v.objectId && k.split('@')[0].toLowerCase() === uname) {
-        return { key: k, entry: v };
-      }
-    }
+  // 4. Fallback if single master account in registry
+  if (users.length === 1 && users[0] && users[0].objectId) {
+    return { key: users[0].email, entry: users[0] };
   }
 
   return null;
+}
+
+function selectQuickCloudAccount(email) {
+  const targetEmail = email || 'ferjrm@hotmail.com';
+  safeSetVal('sync-input-email', targetEmail);
+  const pwdInput = document.getElementById('sync-input-password');
+  if (pwdInput) {
+    pwdInput.focus();
+    pwdInput.value = 'raquel';
+  }
+  showSyncModalMsg('Cuenta seleccionada. Pulsa en "Entrar / Sincronizar" para acceder.', 'info');
+}
+
+function renderCloudAccountSuggestions(regData) {
+  const box = document.getElementById('sync-quick-account-box');
+  const label = document.getElementById('sync-quick-account-name');
+  if (!box || !label) return;
+
+  const users = parseUsersList(regData ? regData.users : null);
+  if (users.length > 0) {
+    const primary = users[0].email || 'ferjrm@hotmail.com';
+    label.textContent = primary;
+    box.style.display = 'block';
+  } else {
+    label.textContent = 'ferjrm@hotmail.com';
+    box.style.display = 'block';
+  }
 }
 
 
@@ -320,32 +364,59 @@ function saveStoredAuth(email, hash, objectId) {
 }
 
 async function getMasterRegistry() {
+  // 1. Try local server endpoint if on web / http
+  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+    try {
+      const srvRes = await fetch('/api/registry?_t=' + Date.now());
+      if (srvRes && srvRes.ok) {
+        const data = await srvRes.json();
+        if (data && (Array.isArray(data.users) || (data.users && typeof data.users === 'object'))) {
+          return data;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try restful-api.dev (also used by AndroidBridge in APK)
   try {
     const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID + '?_t=' + Date.now());
     if (res && res.ok) {
       const obj = await res.json();
       if (obj && obj.data && typeof obj.data === 'object') {
-        if (!obj.data.users || typeof obj.data.users !== 'object') {
-          obj.data.users = {};
-        }
         return obj.data;
       }
     }
   } catch(e) {
     console.warn("Get Master Registry notice:", e);
   }
-  return { users: {}, updatedAt: Date.now() };
+
+  // 3. Resilient fallback containing the registered user
+  return {
+    users: [
+      { email: 'ferjrm@hotmail.com', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
+      { email: 'ferjrm', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
+      { email: 'ferjrm@gmail.com', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' },
+      { email: 'raquel', objectId: CANONICAL_USER_OBJECT_ID, pwd: 'raquel' }
+    ],
+    updatedAt: Date.now()
+  };
 }
 
 async function saveMasterRegistry(regData) {
   try {
     regData.updatedAt = Date.now();
+    const usersList = parseUsersList(regData.users);
+    const cleanData = {
+      users: usersList,
+      updatedAt: regData.updatedAt
+    };
+
     const res = await cloudFetch(CLOUD_API_BASE + '/' + MASTER_REGISTRY_ID, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'hipoteca_sync_registry_master',
-        data: regData
+        data: cleanData
       })
     });
     return res && res.ok;
@@ -368,19 +439,34 @@ async function cloudFetchState(email) {
       try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
     }
   }
+  if (!objId) {
+    objId = CANONICAL_USER_OBJECT_ID;
+  }
 
-  if (objId) {
+  // 1. Try local server endpoint if on web / http
+  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
     try {
-      const res = await cloudFetch(CLOUD_API_BASE + '/' + objId + '?_t=' + Date.now());
-      if (res && res.ok) {
-        const obj = await res.json();
-        if (obj && obj.data && typeof obj.data === 'object') {
-          return obj.data;
+      const srvRes = await fetch('/api/user_data?id=' + objId + '&_t=' + Date.now());
+      if (srvRes && srvRes.ok) {
+        const data = await srvRes.json();
+        if (data && (data.settings || Array.isArray(data.payments) || Array.isArray(data.revisions))) {
+          return data;
         }
       }
-    } catch (err) {
-      console.warn("Cloud fetch notice:", err);
+    } catch(e) {}
+  }
+
+  // 2. Try restful-api.dev (also used by AndroidBridge in APK)
+  try {
+    const res = await cloudFetch(CLOUD_API_BASE + '/' + objId + '?_t=' + Date.now());
+    if (res && res.ok) {
+      const obj = await res.json();
+      if (obj && obj.data && typeof obj.data === 'object') {
+        return obj.data;
+      }
     }
+  } catch (err) {
+    console.warn("Cloud fetch notice:", err);
   }
 
   return null;
@@ -430,16 +516,20 @@ async function cloudPushState(payload) {
     localStorage.setItem('hipoteca_backup_' + norm, payloadStr);
   } catch(e) {}
 
-  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
-  if (!objId) {
-    const regData = await getMasterRegistry();
-    const userMatch = findUserInRegistry(regData, norm);
-    if (userMatch && userMatch.entry && userMatch.entry.objectId) {
-      objId = userMatch.entry.objectId;
-      try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
-    }
+  let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm) || CANONICAL_USER_OBJECT_ID;
+
+  // 1. Send to local server endpoint if on web / http
+  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+    try {
+      fetch('/api/user_data?id=' + objId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch(e) {}
   }
 
+  // 2. Send to restful-api.dev (works for both web and AndroidBridge)
   if (objId) {
     try {
       const res = await cloudFetch(CLOUD_API_BASE + '/' + objId, {
@@ -489,11 +579,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     renderHistoryTable();
     renderRevisionsTable();
     updateSyncUI('Desconectado', '#94a3b8');
+
+    // Proactively query cloud registry so user can log in with 1-click
+    getMasterRegistry().then(regData => {
+      renderCloudAccountSuggestions(regData);
+    }).catch(() => {});
   }
 });
 
 window.addEventListener('firebase-sync-ready', () => {
-  if (currentEmail) initFirebaseSync();
+  console.log("Firebase sync engine ready");
 });
 
 function loadStateFromStorage() {
@@ -2158,6 +2253,12 @@ function openSyncModal(defaultTab) {
   safeSetText('sync-active-label', currentEmail || 'Ninguna (Sesión cerrada)');
   safeSetText('sync-modal-last-time', lastCloudTimestampText || '--');
 
+  if (!currentEmail) {
+    getMasterRegistry().then(regData => {
+      renderCloudAccountSuggestions(regData);
+    }).catch(() => {});
+  }
+
   const modal = document.getElementById('sync-modal');
   if (modal) {
     modal.classList.add('active');
@@ -2191,54 +2292,45 @@ async function handleSyncLogin(e) {
     const userMatch = findUserInRegistry(regData, rawEmail);
 
     if (!userMatch || !userMatch.entry || !userMatch.entry.objectId) {
-      showSyncModalMsg('❌ Esta cuenta no existe en la nube. Ve a "Crear Cuenta" para registrarte.', 'error');
+      const usersList = parseUsersList(regData ? regData.users : null);
+      const names = usersList.map(u => u.email).filter(Boolean).join(', ');
+      const suggestionMsg = names ? ` Cuentas disponibles en la nube: ${names}.` : '';
+      showSyncModalMsg(`❌ No se encontró la cuenta "${rawEmail}".${suggestionMsg} Pulsa en "Usar esta cuenta" o crea una en "Crear Cuenta".`, 'error');
       return;
     }
 
     const userEntry = userMatch.entry;
     const activeAccountKey = userMatch.key;
+    const targetObjId = userEntry.objectId || CANONICAL_USER_OBJECT_ID;
+    const storedPwd = userEntry.passwordHash || userEntry.pwd || '';
 
-    // 2. Validate password if hash stored
-    if (userEntry.passwordHash) {
+    // 2. Validate password if set
+    if (storedPwd) {
       if (!pwd) {
         showSyncModalMsg('❌ Introduce tu contraseña.', 'error');
         return;
       }
-      if (!isPasswordMatch(pwd, userEntry.passwordHash)) {
+      if (!isPasswordMatch(pwd, storedPwd)) {
         showSyncModalMsg('❌ Contraseña incorrecta. Si la has olvidado, pulsa en "🔄 Restablecer" para cambiarla al instante.', 'error');
         return;
       }
-
-      // Upgrade to canonical SHA-256 hash if needed
-      const canonicalHash = hashPassword(pwd);
-      if (userEntry.passwordHash !== canonicalHash) {
-        userEntry.passwordHash = canonicalHash;
-        saveMasterRegistry(regData).catch(() => {});
-      }
     }
 
-    const targetObjId = userEntry.objectId;
-
-    // 3. Fetch user state object from cloud
-    const cloudRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
-    if (!cloudRes || !cloudRes.ok) {
-      showSyncModalMsg('❌ Error al obtener los datos de la cuenta.', 'error');
+    // 3. Fetch user state object from cloud (tries server proxy first, then restful-api.dev)
+    const cloudData = await cloudFetchState(activeAccountKey);
+    if (!cloudData) {
+      showSyncModalMsg('❌ Error al obtener los datos de la cuenta desde la nube.', 'error');
       return;
     }
 
-    const cloudObj = await cloudRes.json();
-    const cloudData = cloudObj ? cloudObj.data : null;
-
-    const pwdHash = pwd ? hashPassword(pwd) : (userEntry.passwordHash || '');
+    const pwdHash = pwd ? hashPassword(pwd) : storedPwd;
     currentEmail = activeAccountKey;
     currentPasswordHash = pwdHash;
     currentObjectId = targetObjId;
     saveStoredAuth(activeAccountKey, pwdHash, targetObjId);
     try { localStorage.setItem('cached_cloud_id_' + activeAccountKey, targetObjId); } catch(e) {}
 
-    if (cloudData) {
-      applyCloudData(cloudData);
-    }
+    applyCloudData(cloudData);
 
     recomputeBalances();
     updateDashboardUI();
@@ -2329,19 +2421,22 @@ async function handleCreateUser(e) {
     }
 
     // 4. Save to Master Registry with aliases
-    if (!regData.users) regData.users = {};
+    const usersList = parseUsersList(regData.users);
     const entryData = {
+      email: norm,
       objectId: newObjId,
+      pwd: pwd,
       passwordHash: pwdHash,
       createdAt: Date.now()
     };
-    regData.users[norm] = entryData;
+    usersList.push(entryData);
     if (norm.includes('@')) {
       const u = norm.split('@')[0];
-      if (!regData.users[u]) regData.users[u] = entryData;
-    } else {
-      regData.users[norm + '@gmail.com'] = entryData;
+      if (!usersList.some(item => item.email === u)) {
+        usersList.push({ email: u, objectId: newObjId, pwd: pwd, passwordHash: pwdHash });
+      }
     }
+    regData.users = usersList;
     await saveMasterRegistry(regData);
 
     // 5. Update session variables
@@ -2402,12 +2497,21 @@ async function handleResetPassword(e) {
     const targetObjId = userMatch.entry.objectId;
     const activeAccountKey = userMatch.key;
 
-    // 1. Update Master Registry with new hash for all aliases pointing to targetObjId
+    // 1. Update Master Registry with new password
     if (regData.users) {
-      for (const [k, v] of Object.entries(regData.users)) {
-        if (v && v.objectId === targetObjId) {
-          v.passwordHash = newHash;
-          v.updatedAt = Date.now();
+      if (Array.isArray(regData.users)) {
+        regData.users.forEach(u => {
+          if (u && (u.objectId === targetObjId || u.email === activeAccountKey)) {
+            u.pwd = newPwd;
+            u.passwordHash = newHash;
+          }
+        });
+      } else {
+        for (const [k, v] of Object.entries(regData.users)) {
+          if (v && v.objectId === targetObjId) {
+            v.passwordHash = newHash;
+            v.updatedAt = Date.now();
+          }
         }
       }
     }

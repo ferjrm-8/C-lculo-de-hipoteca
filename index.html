@@ -7,6 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Hipoteca Conjunta - Cálculo, Reparto y Amortización</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <link rel="manifest" href="manifest.json">
 
   <!-- Standalone Web & Mobile App -->
@@ -1810,6 +1813,17 @@
 
       <!-- TAB 1: INICIAR SESIÓN -->
       <div id="sync-view-login">
+        <!-- Detected Cloud Account Fast Login Suggestion -->
+        <div id="sync-quick-account-box" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+          <div style="font-size: 11px; color: #a7f3d0; margin-bottom: 6px; font-weight: 600;">☁️ Cuenta activa en la nube detectada:</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+            <span id="sync-quick-account-name" style="font-family: monospace; font-size: 13px; font-weight: 700; color: #ecfdf5;">ferjrm@hotmail.com</span>
+            <button type="button" onclick="selectQuickCloudAccount()" class="btn btn-primary" style="padding: 4px 10px; font-size: 11px; height: auto;">
+              Usar esta cuenta
+            </button>
+          </div>
+        </div>
+
         <form id="sync-login-form" onsubmit="handleSyncLogin(event)">
           <div class="form-field" style="margin-bottom: 12px;">
             <label style="color: #cbd5e1; font-size: 12px; font-weight: 600;">Correo Electrónico o Usuario:</label>
@@ -2035,6 +2049,6 @@
   </script>
 
   <!-- JAVASCRIPT LOGIC & COMPUTATION ENGINE -->
-  <script src="app.js"></script>
+  <script src="app.js?v=20261015_multidevice_unified_v3"></script>
 </body>
 </html>
