@@ -144,12 +144,48 @@ async function cloudFetch(url, options = {}) {
 
 function normalizeUserEmail(rawEmail) {
   if (!rawEmail) return '';
-  let s = String(rawEmail).trim().toLowerCase();
-  if (!s.includes('@')) {
-    s += '@gmail.com';
-  }
-  return s;
+  return String(rawEmail).trim().toLowerCase();
 }
+
+function findUserInRegistry(regData, rawInput) {
+  if (!regData || !regData.users || !rawInput) return null;
+  const input = String(rawInput).trim().toLowerCase();
+  const users = regData.users;
+
+  // 1. Exact match (e.g., "ferjrm", "ferjrm@gmail.com", "ferjrm@hotmail.com")
+  if (users[input] && users[input].objectId) {
+    return { key: input, entry: users[input] };
+  }
+
+  // 2. If input has no '@', try matching standard email suffixes or username part
+  if (!input.includes('@')) {
+    if (users[input + '@gmail.com'] && users[input + '@gmail.com'].objectId) {
+      return { key: input + '@gmail.com', entry: users[input + '@gmail.com'] };
+    }
+    if (users[input + '@hotmail.com'] && users[input + '@hotmail.com'].objectId) {
+      return { key: input + '@hotmail.com', entry: users[input + '@hotmail.com'] };
+    }
+    for (const [k, v] of Object.entries(users)) {
+      if (v && v.objectId && k.split('@')[0].toLowerCase() === input) {
+        return { key: k, entry: v };
+      }
+    }
+  } else {
+    // 3. If input has '@', try matching username part before '@'
+    const uname = input.split('@')[0].toLowerCase();
+    if (users[uname] && users[uname].objectId) {
+      return { key: uname, entry: users[uname] };
+    }
+    for (const [k, v] of Object.entries(users)) {
+      if (v && v.objectId && k.split('@')[0].toLowerCase() === uname) {
+        return { key: k, entry: v };
+      }
+    }
+  }
+
+  return null;
+}
+
 
 function hashPassword(pwd) {
   if (!pwd) return '';
@@ -326,8 +362,9 @@ async function cloudFetchState(email) {
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
   if (!objId) {
     const regData = await getMasterRegistry();
-    if (regData.users && regData.users[norm] && regData.users[norm].objectId) {
-      objId = regData.users[norm].objectId;
+    const userMatch = findUserInRegistry(regData, norm);
+    if (userMatch && userMatch.entry && userMatch.entry.objectId) {
+      objId = userMatch.entry.objectId;
       try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
     }
   }
@@ -396,8 +433,9 @@ async function cloudPushState(payload) {
   let objId = currentObjectId || localStorage.getItem('cached_cloud_id_' + norm);
   if (!objId) {
     const regData = await getMasterRegistry();
-    if (regData.users && regData.users[norm] && regData.users[norm].objectId) {
-      objId = regData.users[norm].objectId;
+    const userMatch = findUserInRegistry(regData, norm);
+    if (userMatch && userMatch.entry && userMatch.entry.objectId) {
+      objId = userMatch.entry.objectId;
       try { localStorage.setItem('cached_cloud_id_' + norm, objId); } catch(e) {}
     }
   }
@@ -2145,19 +2183,20 @@ async function handleSyncLogin(e) {
     return;
   }
 
-  const norm = normalizeUserEmail(rawEmail);
-
   showSyncModalMsg('Verificando cuenta en la nube...', 'info');
 
   try {
     // 1. Fetch master registry
     const regData = await getMasterRegistry();
-    const userEntry = regData.users ? regData.users[norm] : null;
+    const userMatch = findUserInRegistry(regData, rawEmail);
 
-    if (!userEntry || !userEntry.objectId) {
+    if (!userMatch || !userMatch.entry || !userMatch.entry.objectId) {
       showSyncModalMsg('❌ Esta cuenta no existe en la nube. Ve a "Crear Cuenta" para registrarte.', 'error');
       return;
     }
+
+    const userEntry = userMatch.entry;
+    const activeAccountKey = userMatch.key;
 
     // 2. Validate password if hash stored
     if (userEntry.passwordHash) {
@@ -2166,11 +2205,11 @@ async function handleSyncLogin(e) {
         return;
       }
       if (!isPasswordMatch(pwd, userEntry.passwordHash)) {
-        showSyncModalMsg('❌ Contraseña incorrecta. Si la has olvidado, pulsa "¿Olvidaste tu contraseña?" para restablecerla al instante.', 'error');
+        showSyncModalMsg('❌ Contraseña incorrecta. Si la has olvidado, pulsa en "🔄 Restablecer" para cambiarla al instante.', 'error');
         return;
       }
 
-      // If stored plainly or case-different, upgrade to canonical SHA-256 hash
+      // Upgrade to canonical SHA-256 hash if needed
       const canonicalHash = hashPassword(pwd);
       if (userEntry.passwordHash !== canonicalHash) {
         userEntry.passwordHash = canonicalHash;
@@ -2191,11 +2230,11 @@ async function handleSyncLogin(e) {
     const cloudData = cloudObj ? cloudObj.data : null;
 
     const pwdHash = pwd ? hashPassword(pwd) : (userEntry.passwordHash || '');
-    currentEmail = norm;
+    currentEmail = activeAccountKey;
     currentPasswordHash = pwdHash;
     currentObjectId = targetObjId;
-    saveStoredAuth(norm, pwdHash, targetObjId);
-    try { localStorage.setItem('cached_cloud_id_' + norm, targetObjId); } catch(e) {}
+    saveStoredAuth(activeAccountKey, pwdHash, targetObjId);
+    try { localStorage.setItem('cached_cloud_id_' + activeAccountKey, targetObjId); } catch(e) {}
 
     if (cloudData) {
       applyCloudData(cloudData);
@@ -2245,7 +2284,8 @@ async function handleCreateUser(e) {
     const regData = await getMasterRegistry();
 
     // 2. Check if user already exists
-    if (regData.users && regData.users[norm]) {
+    const existing = findUserInRegistry(regData, rawEmail);
+    if (existing) {
       showSyncModalMsg('⚠️ Esta cuenta ya existe en la nube. Ve a "Iniciar Sesión" para entrar, o a "Restablecer" si no recuerdas tu contraseña.', 'warning');
       return;
     }
@@ -2288,13 +2328,20 @@ async function handleCreateUser(e) {
       return;
     }
 
-    // 4. Save to Master Registry
+    // 4. Save to Master Registry with aliases
     if (!regData.users) regData.users = {};
-    regData.users[norm] = {
+    const entryData = {
       objectId: newObjId,
       passwordHash: pwdHash,
       createdAt: Date.now()
     };
+    regData.users[norm] = entryData;
+    if (norm.includes('@')) {
+      const u = norm.split('@')[0];
+      if (!regData.users[u]) regData.users[u] = entryData;
+    } else {
+      regData.users[norm + '@gmail.com'] = entryData;
+    }
     await saveMasterRegistry(regData);
 
     // 5. Update session variables
@@ -2345,18 +2392,25 @@ async function handleResetPassword(e) {
 
   try {
     const regData = await getMasterRegistry();
-    const userEntry = regData.users ? regData.users[norm] : null;
+    const userMatch = findUserInRegistry(regData, rawEmail);
 
-    if (!userEntry || !userEntry.objectId) {
-      showSyncModalMsg('❌ No se encontró ninguna cuenta registrada para "' + norm + '". Puedes crearla en "Crear Cuenta".', 'error');
+    if (!userMatch || !userMatch.entry || !userMatch.entry.objectId) {
+      showSyncModalMsg('❌ No se encontró ninguna cuenta registrada para "' + rawEmail + '". Puedes crearla en "Crear Cuenta".', 'error');
       return;
     }
 
-    const targetObjId = userEntry.objectId;
+    const targetObjId = userMatch.entry.objectId;
+    const activeAccountKey = userMatch.key;
 
-    // 1. Update Master Registry with new hash
-    userEntry.passwordHash = newHash;
-    userEntry.updatedAt = Date.now();
+    // 1. Update Master Registry with new hash for all aliases pointing to targetObjId
+    if (regData.users) {
+      for (const [k, v] of Object.entries(regData.users)) {
+        if (v && v.objectId === targetObjId) {
+          v.passwordHash = newHash;
+          v.updatedAt = Date.now();
+        }
+      }
+    }
     await saveMasterRegistry(regData);
 
     // 2. Update cloud document with new hash
@@ -2372,7 +2426,7 @@ async function handleResetPassword(e) {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              name: 'hipoteca_user_' + norm,
+              name: 'hipoteca_user_' + activeAccountKey,
               data: cloudData
             })
           });
@@ -2383,11 +2437,11 @@ async function handleResetPassword(e) {
     }
 
     // 3. Save stored auth locally and activate session
-    currentEmail = norm;
+    currentEmail = activeAccountKey;
     currentPasswordHash = newHash;
     currentObjectId = targetObjId;
-    saveStoredAuth(norm, newHash, targetObjId);
-    try { localStorage.setItem('cached_cloud_id_' + norm, targetObjId); } catch(e) {}
+    saveStoredAuth(activeAccountKey, newHash, targetObjId);
+    try { localStorage.setItem('cached_cloud_id_' + activeAccountKey, targetObjId); } catch(e) {}
 
     // 4. Download and apply user cloud data
     const fetchRes = await cloudFetch(CLOUD_API_BASE + '/' + targetObjId + '?_t=' + Date.now());
@@ -2405,7 +2459,7 @@ async function handleResetPassword(e) {
     updateSyncUI('● En Tiempo Real', '#10b981');
     closeSyncModal();
     switchTab('dashboard');
-    showToast('¡Contraseña restablecida correctamente! Sesión iniciada como ' + norm);
+    showToast('¡Contraseña restablecida correctamente! Sesión iniciada como ' + activeAccountKey);
 
     startRealtimePoller();
   } catch (err) {
