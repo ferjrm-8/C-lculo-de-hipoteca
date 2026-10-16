@@ -1,11 +1,10 @@
 {
-  "name": "hipoteca-conjunta-web",
+  "name": "Hipoteca Conjunta Cloud Realtime",
   "version": "1.0.0",
-  "description": "Calculadora y gestor de hipotecas compartidas en tiempo real",
-  "main": "server.js",
+  "description": "Calculadora de hipoteca compartida con sincronización en tiempo real en Firestore",
+  "main": "index.html",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "npx serve . -l 3000"
   },
   "dependencies": {}
 }
